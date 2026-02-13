@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>PDF Merger - Local & Private</title>
+    <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📄</text></svg>" />
+  </head>
+  <body>
+    <div id="app">
+      <header>
+        <h1>PDF Merger</h1>
+        <p class="subtitle">Merge PDFs & images locally. Your files never leave your device.</p>
+      </header>
+
+      <main>
+        <div id="drop-zone" tabindex="0">
+          <div class="drop-zone-content">
+            <svg class="upload-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+              <path d="M12 16V4m0 0L8 8m4-4l4 4" stroke-linecap="round" stroke-linejoin="round"/>
+              <path d="M2 17l.621 2.485A2 2 0 004.561 21h14.878a2 2 0 001.94-1.515L22 17" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+            <p class="drop-text">Drop files here or <button type="button" id="browse-btn">browse</button></p>
+            <p class="drop-hint">Supports PDF, PNG, JPG, JPEG, WebP</p>
+          </div>
+          <input type="file" id="file-input" multiple accept=".pdf,.png,.jpg,.jpeg,.webp" hidden />
+        </div>
+
+        <div id="file-list-section" class="hidden">
+          <div class="section-header">
+            <h2>Files <span id="file-count" class="badge">0</span></h2>
+            <div class="actions">
+              <button type="button" id="clear-btn" class="btn btn-ghost">Clear all</button>
+              <button type="button" id="merge-btn" class="btn btn-primary">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16">
+                  <path d="M12 5v14m-7-7h14" stroke-linecap="round"/>
+                </svg>
+                Merge & Download
+              </button>
+            </div>
+          </div>
+          <p class="reorder-hint">Drag and drop to reorder files</p>
+          <ul id="file-list"></ul>
+        </div>
+
+        <div id="progress-overlay" class="hidden">
+          <div class="progress-card">
+            <div class="spinner"></div>
+            <p id="progress-text">Merging files...</p>
+          </div>
+        </div>
+      </main>
+
+      <footer>
+        <p>100% client-side. No uploads. No servers. Your files stay on your machine.</p>
+      </footer>
+    </div>
+
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>
