@@ -1,0 +1,18 @@
+{
+  "name": "merge-my-pdf-files-locally",
+  "version": "1.0.0",
+  "description": "i can't trust some files on online tools, building a simple local solution",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start"
+  },
+  "dependencies": {
+    "next": "^15.3.3",
+    "pdf-lib": "^1.17.1",
+    "pdfjs-dist": "3.11.174",
+    "react": "^19.1.0",
+    "react-dom": "^19.1.0"
+  }
+}
