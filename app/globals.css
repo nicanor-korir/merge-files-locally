@@ -7,10 +7,10 @@
 }
 
 :root {
-  --bg: #f5f6f8;
+  --bg: #f3f4f6;
   --surface: #ffffff;
-  --surface-hover: #fafbfc;
-  --border: #e0e3e8;
+  --surface-raised: #fafbfc;
+  --border: #e2e5ea;
   --border-hover: #c0c5ce;
   --text: #111827;
   --text-secondary: #6b7280;
@@ -31,8 +31,7 @@
   --shadow: 0 2px 8px rgba(0, 0, 0, 0.06), 0 1px 2px rgba(0, 0, 0, 0.04);
   --shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.08);
   --transition: 180ms ease;
-  --font: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial,
-    sans-serif;
+  --font: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
 }
 
 body {
@@ -44,69 +43,101 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 
-/* ── Layout ── */
-.container {
-  max-width: 760px;
-  margin: 0 auto;
-  padding: 32px 20px 64px;
+/* ─────────────────────── Header ─────────────────────── */
+
+.header {
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  padding: 14px 24px;
+  position: sticky;
+  top: 0;
+  z-index: 50;
 }
 
-/* ── Header ── */
-.header {
-  text-align: center;
-  margin-bottom: 36px;
+.header-inner {
+  max-width: 1360px;
+  margin: 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 12px;
 }
 
 .header-icon {
-  display: inline-flex;
+  display: flex;
   align-items: center;
   justify-content: center;
-  width: 56px;
-  height: 56px;
-  border-radius: 16px;
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
   background: var(--primary-light);
   color: var(--primary);
-  margin-bottom: 16px;
+  flex-shrink: 0;
 }
 
 .header h1 {
-  font-size: 1.625rem;
+  font-size: 1.1rem;
   font-weight: 700;
-  letter-spacing: -0.025em;
-  color: var(--text);
+  letter-spacing: -0.02em;
 }
 
 .header p {
   color: var(--text-secondary);
-  font-size: 0.9rem;
-  margin-top: 6px;
+  font-size: 0.78rem;
+  margin-top: 1px;
 }
 
 .privacy-badge {
+  margin-left: auto;
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  margin-top: 12px;
-  padding: 5px 14px;
+  gap: 5px;
+  padding: 4px 12px;
   background: var(--success-bg);
   color: var(--success);
-  font-size: 0.75rem;
+  font-size: 0.72rem;
   font-weight: 600;
   border-radius: 99px;
+  flex-shrink: 0;
 }
 
-/* ── Drop Zone ── */
+/* ─────────────────────── Two-Column Layout ─────────────────────── */
+
+.layout {
+  display: grid;
+  grid-template-columns: 380px 1fr;
+  gap: 0;
+  max-width: 1360px;
+  margin: 0 auto;
+  min-height: calc(100vh - 69px);
+}
+
+.panel-left {
+  padding: 20px;
+  overflow-y: auto;
+  max-height: calc(100vh - 69px);
+  border-right: 1px solid var(--border);
+  background: var(--surface);
+}
+
+.panel-right {
+  padding: 20px;
+  overflow-y: auto;
+  max-height: calc(100vh - 69px);
+  background: var(--bg);
+}
+
+/* ─────────────────────── Drop Zone ─────────────────────── */
+
 .drop-zone {
   border: 2px dashed var(--border);
   border-radius: var(--radius);
-  background: var(--surface);
-  padding: 52px 24px;
+  background: var(--surface-raised);
+  padding: 36px 20px;
   text-align: center;
   cursor: pointer;
   transition: border-color var(--transition), background var(--transition),
     box-shadow var(--transition);
   outline: none;
-  position: relative;
 }
 
 .drop-zone:hover,
@@ -124,10 +155,10 @@ body {
 }
 
 .drop-zone-icon {
-  width: 48px;
-  height: 48px;
+  width: 36px;
+  height: 36px;
   color: var(--text-tertiary);
-  margin-bottom: 14px;
+  margin-bottom: 10px;
   transition: color var(--transition);
 }
 
@@ -137,7 +168,7 @@ body {
 }
 
 .drop-zone-text {
-  font-size: 0.95rem;
+  font-size: 0.88rem;
   color: var(--text);
 }
 
@@ -158,66 +189,55 @@ body {
 }
 
 .drop-zone-hint {
-  font-size: 0.78rem;
+  font-size: 0.72rem;
   color: var(--text-tertiary);
-  margin-top: 8px;
+  margin-top: 6px;
 }
 
-/* ── File List ── */
+/* ─────────────────────── File List Section ─────────────────────── */
+
 .file-section {
-  margin-top: 28px;
+  margin-top: 18px;
   animation: fadeIn 200ms ease;
 }
 
 @keyframes fadeIn {
-  from {
-    opacity: 0;
-    transform: translateY(8px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
 }
 
 .section-bar {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 6px;
-  flex-wrap: wrap;
-  gap: 8px;
+  margin-bottom: 4px;
 }
 
 .section-bar h2 {
-  font-size: 1rem;
+  font-size: 0.88rem;
   font-weight: 600;
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 7px;
 }
 
 .count-badge {
   background: var(--primary-light);
   color: var(--primary);
-  font-size: 0.72rem;
+  font-size: 0.68rem;
   font-weight: 700;
-  padding: 2px 9px;
+  padding: 1px 8px;
   border-radius: 99px;
 }
 
-.actions {
-  display: flex;
-  gap: 8px;
-}
-
 .reorder-hint {
-  font-size: 0.78rem;
+  font-size: 0.72rem;
   color: var(--text-tertiary);
-  margin-bottom: 14px;
+  margin-bottom: 10px;
 }
 
-/* ── Buttons ── */
+/* ─────────────────────── Buttons ─────────────────────── */
+
 .btn {
   display: inline-flex;
   align-items: center;
@@ -225,7 +245,7 @@ body {
   gap: 7px;
   padding: 9px 18px;
   border-radius: var(--radius-sm);
-  font-size: 0.84rem;
+  font-size: 0.82rem;
   font-weight: 600;
   border: none;
   cursor: pointer;
@@ -234,9 +254,9 @@ body {
   white-space: nowrap;
 }
 
-.btn:active {
-  transform: scale(0.97);
-}
+.btn:active { transform: scale(0.97); }
+
+.btn-sm { padding: 5px 12px; font-size: 0.76rem; }
 
 .btn-primary {
   background: var(--primary);
@@ -264,32 +284,23 @@ body {
   color: var(--text);
 }
 
-.btn-danger-ghost {
-  background: transparent;
-  color: var(--text-tertiary);
-}
+/* ─────────────────────── File Items ─────────────────────── */
 
-.btn-danger-ghost:hover {
-  color: var(--danger);
-  background: var(--danger-bg);
-}
-
-/* ── File Items ── */
 .file-list {
   list-style: none;
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 4px;
 }
 
 .file-item {
   display: flex;
   align-items: center;
-  gap: 12px;
-  padding: 10px 14px;
-  background: var(--surface);
+  gap: 8px;
+  padding: 8px 10px;
+  background: var(--surface-raised);
   border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius-xs);
   transition: box-shadow var(--transition), border-color var(--transition),
     transform var(--transition), opacity var(--transition);
   user-select: none;
@@ -308,14 +319,14 @@ body {
 
 .file-item.drag-target {
   border-color: var(--primary);
-  box-shadow: 0 0 0 3px var(--primary-glow);
+  box-shadow: 0 0 0 2px var(--primary-glow);
 }
 
 .file-order {
-  font-size: 0.72rem;
+  font-size: 0.68rem;
   font-weight: 700;
   color: var(--text-tertiary);
-  width: 20px;
+  width: 16px;
   text-align: center;
   flex-shrink: 0;
 }
@@ -325,7 +336,7 @@ body {
   color: var(--text-tertiary);
   flex-shrink: 0;
   display: flex;
-  padding: 4px 2px;
+  padding: 3px 1px;
   touch-action: none;
   border-radius: 4px;
   transition: color var(--transition), background var(--transition);
@@ -336,20 +347,18 @@ body {
   background: var(--bg);
 }
 
-.drag-handle:active {
-  cursor: grabbing;
-}
+.drag-handle:active { cursor: grabbing; }
 
 .file-thumb {
-  width: 40px;
-  height: 40px;
-  border-radius: var(--radius-xs);
+  width: 32px;
+  height: 32px;
+  border-radius: 5px;
   background: var(--bg);
   flex-shrink: 0;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 0.65rem;
+  font-size: 0.6rem;
   font-weight: 700;
   color: var(--primary);
   border: 1px solid var(--border);
@@ -373,7 +382,7 @@ body {
 }
 
 .file-name {
-  font-size: 0.84rem;
+  font-size: 0.78rem;
   font-weight: 500;
   white-space: nowrap;
   overflow: hidden;
@@ -381,9 +390,31 @@ body {
 }
 
 .file-meta {
-  font-size: 0.72rem;
+  font-size: 0.66rem;
   color: var(--text-tertiary);
   margin-top: 1px;
+}
+
+.move-btn {
+  background: none;
+  border: none;
+  color: var(--text-tertiary);
+  cursor: pointer;
+  padding: 3px;
+  border-radius: 4px;
+  display: flex;
+  transition: color var(--transition), background var(--transition);
+  flex-shrink: 0;
+}
+
+.move-btn:hover:not(:disabled) {
+  color: var(--primary);
+  background: var(--primary-light);
+}
+
+.move-btn:disabled {
+  opacity: 0.25;
+  cursor: default;
 }
 
 .file-remove {
@@ -391,7 +422,7 @@ body {
   border: none;
   color: var(--text-tertiary);
   cursor: pointer;
-  padding: 6px;
+  padding: 4px;
   border-radius: var(--radius-xs);
   display: flex;
   transition: color var(--transition), background var(--transition);
@@ -403,11 +434,165 @@ body {
   background: var(--danger-bg);
 }
 
-/* ── Progress Overlay ── */
+/* ─────────────────────── Merge Bar ─────────────────────── */
+
+.merge-bar {
+  margin-top: 16px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.btn-merge {
+  flex: 1;
+}
+
+.merge-meta {
+  font-size: 0.72rem;
+  color: var(--text-tertiary);
+  white-space: nowrap;
+}
+
+/* ─────────────────────── Preview Panel ─────────────────────── */
+
+.preview-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  color: var(--text-tertiary);
+  text-align: center;
+  gap: 10px;
+}
+
+.preview-empty p {
+  font-size: 0.92rem;
+  font-weight: 500;
+  color: var(--text-secondary);
+}
+
+.preview-empty span {
+  font-size: 0.78rem;
+}
+
+.preview-scroll {
+  height: 100%;
+}
+
+.preview-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 16px;
+  position: sticky;
+  top: 0;
+  background: var(--bg);
+  padding-bottom: 12px;
+  z-index: 5;
+}
+
+.preview-title {
+  font-size: 0.88rem;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.preview-pages {
+  font-size: 0.72rem;
+  color: var(--text-tertiary);
+  background: var(--surface);
+  padding: 3px 10px;
+  border-radius: 99px;
+  border: 1px solid var(--border);
+}
+
+.preview-pages-list {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+  padding-bottom: 24px;
+}
+
+.preview-page {
+  width: 100%;
+  max-width: 560px;
+  animation: fadeIn 200ms ease;
+}
+
+.preview-page-inner {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  box-shadow: var(--shadow-sm);
+  aspect-ratio: auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 120px;
+}
+
+.preview-img {
+  width: 100%;
+  height: auto;
+  display: block;
+}
+
+.preview-error {
+  padding: 40px 20px;
+  color: var(--text-tertiary);
+  font-size: 0.82rem;
+}
+
+.preview-loading {
+  padding: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.preview-page-label {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 6px;
+  padding: 0 2px;
+}
+
+.preview-page-num {
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+
+.preview-page-source {
+  font-size: 0.68rem;
+  color: var(--text-tertiary);
+  max-width: 200px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ─────────────────────── Divider between pages (visual) ─────────────────────── */
+
+.preview-page + .preview-page::before {
+  content: '';
+  display: block;
+  width: 40px;
+  height: 0;
+  border-top: 2px dotted var(--border);
+  margin: 0 auto 16px;
+}
+
+/* ─────────────────────── Progress Overlay ─────────────────────── */
+
 .progress-overlay {
   position: fixed;
   inset: 0;
-  background: rgba(245, 246, 248, 0.88);
+  background: rgba(243, 244, 246, 0.88);
   backdrop-filter: blur(6px);
   display: flex;
   align-items: center;
@@ -437,10 +622,17 @@ body {
   animation: spin 0.65s linear infinite;
 }
 
+.spinner-sm {
+  width: 20px;
+  height: 20px;
+  border: 2px solid var(--border);
+  border-top-color: var(--primary);
+  border-radius: 50%;
+  animation: spin 0.65s linear infinite;
+}
+
 @keyframes spin {
-  to {
-    transform: rotate(360deg);
-  }
+  to { transform: rotate(360deg); }
 }
 
 .progress-text {
@@ -450,7 +642,8 @@ body {
   word-break: break-word;
 }
 
-/* ── Toast ── */
+/* ─────────────────────── Toast ─────────────────────── */
+
 .toast {
   position: fixed;
   bottom: 24px;
@@ -458,9 +651,9 @@ body {
   transform: translateX(-50%);
   background: var(--text);
   color: #fff;
-  font-size: 0.84rem;
+  font-size: 0.82rem;
   font-weight: 500;
-  padding: 10px 20px;
+  padding: 10px 22px;
   border-radius: 99px;
   box-shadow: var(--shadow-lg);
   z-index: 200;
@@ -469,69 +662,70 @@ body {
 }
 
 @keyframes toastIn {
-  from {
-    opacity: 0;
-    transform: translateX(-50%) translateY(12px);
-  }
-  to {
-    opacity: 1;
-    transform: translateX(-50%) translateY(0);
-  }
+  from { opacity: 0; transform: translateX(-50%) translateY(12px); }
+  to { opacity: 1; transform: translateX(-50%) translateY(0); }
 }
 
 @keyframes toastOut {
-  to {
-    opacity: 0;
-    transform: translateX(-50%) translateY(12px);
+  to { opacity: 0; transform: translateX(-50%) translateY(12px); }
+}
+
+/* ─────────────────────── Responsive ─────────────────────── */
+
+@media (max-width: 860px) {
+  .layout {
+    grid-template-columns: 1fr;
+    min-height: auto;
+  }
+
+  .panel-left {
+    max-height: none;
+    border-right: none;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .panel-right {
+    max-height: none;
+    min-height: 50vh;
   }
 }
 
-/* ── Footer ── */
-.footer {
-  text-align: center;
-  margin-top: 52px;
-  padding-top: 24px;
-  border-top: 1px solid var(--border);
-}
-
-.footer p {
-  font-size: 0.78rem;
-  color: var(--text-tertiary);
-}
-
-/* ── Responsive ── */
 @media (max-width: 520px) {
-  .container {
-    padding: 20px 14px 48px;
+  .header {
+    padding: 12px 14px;
   }
 
   .header h1 {
-    font-size: 1.35rem;
+    font-size: 0.95rem;
+  }
+
+  .header p {
+    display: none;
+  }
+
+  .panel-left {
+    padding: 14px;
+  }
+
+  .panel-right {
+    padding: 14px;
   }
 
   .drop-zone {
-    padding: 36px 16px;
-  }
-
-  .section-bar {
-    flex-direction: column;
-    align-items: flex-start;
-  }
-
-  .actions {
-    width: 100%;
-  }
-
-  .btn-primary {
-    flex: 1;
+    padding: 28px 14px;
   }
 
   .file-item {
-    gap: 8px;
-    padding: 8px 10px;
+    gap: 6px;
+    padding: 6px 8px;
+  }
+
+  .merge-bar {
+    flex-direction: column;
+    align-items: stretch;
   }
 
   .progress-card {
-    padding: 28px 32px;
+    padding: 28px 28px;
   }
 }
