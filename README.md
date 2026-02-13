@@ -4,7 +4,10 @@ A privacy-focused web app for merging PDFs and images into a single PDF document
 
 ## Why?
 
-I can't trust some files on online tools, so I built a simple local solution.
+I can't trust some files on online tools, so I built a simple local solution
+
+<img width="1460" height="1188" alt="Screenshot 2026-02-13 at 13 38 00" src="https://github.com/user-attachments/assets/5eb57cb6-e5b4-4524-810e-6713df24af14" />
+
 
 ## Features
 
