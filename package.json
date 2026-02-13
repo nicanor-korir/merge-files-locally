@@ -11,7 +11,7 @@
   "dependencies": {
     "next": "^15.3.3",
     "pdf-lib": "^1.17.1",
-    "pdfjs-dist": "^5.4.624",
+    "pdfjs-dist": "3.11.174",
     "react": "^19.1.0",
     "react-dom": "^19.1.0"
   }

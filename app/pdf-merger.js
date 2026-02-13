@@ -47,9 +47,13 @@ export default function PdfMerger() {
         if (entry.type === 'application/pdf') {
           try {
             const arrayBuffer = await entry.file.arrayBuffer();
-            const pdfjsLib = await import('pdfjs-dist');
-            pdfjsLib.GlobalWorkerOptions.workerSrc = undefined;
-            const pdf = await pdfjsLib.getDocument({ data: new Uint8Array(arrayBuffer) }).promise;
+            const pdfjs = await import('pdfjs-dist/legacy/build/pdf.js');
+            const pdfjsLib = pdfjs.default || pdfjs;
+            if (!pdfjsLib.GlobalWorkerOptions.workerSrc) {
+              pdfjsLib.GlobalWorkerOptions.workerSrc = '/pdf.worker.min.js';
+            }
+            const loadingTask = pdfjsLib.getDocument({ data: new Uint8Array(arrayBuffer) });
+            const pdf = await loadingTask.promise;
 
             for (let p = 1; p <= pdf.numPages; p++) {
               if (cancelled) return;
@@ -73,7 +77,8 @@ export default function PdfMerger() {
                 height: viewport.height,
               });
             }
-          } catch {
+          } catch (err) {
+            console.error('PDF preview failed:', entry.name, err);
             globalPage++;
             allPreviews.push({
               fileId: entry.id,
@@ -221,25 +226,48 @@ export default function PdfMerger() {
         if (entry.type === 'application/pdf') {
           const sourcePdf = await PDFDocument.load(arrayBuffer, { ignoreEncryption: true });
           const pages = await mergedPdf.copyPages(sourcePdf, sourcePdf.getPageIndices());
-          pages.forEach((page) => mergedPdf.addPage(page));
+          pages.forEach((page) => {
+            // Scale PDF pages to A4 width while preserving aspect ratio
+            const A4_WIDTH = 595.28;
+            const A4_HEIGHT = 841.89;
+            const { width, height } = page.getSize();
+            const scale = A4_WIDTH / width;
+            const newHeight = height * scale;
+            page.setSize(A4_WIDTH, Math.max(newHeight, A4_HEIGHT));
+            page.scaleContent(scale, scale);
+            // Reposition content to top of page
+            if (newHeight < A4_HEIGHT) {
+              page.translateContent(0, A4_HEIGHT - newHeight);
+            }
+            mergedPdf.addPage(page);
+          });
         } else {
-          let image;
-          if (entry.type === 'image/png') {
-            image = await mergedPdf.embedPng(arrayBuffer);
-          } else if (entry.type === 'image/webp') {
-            const jpgBuf = await convertToJpg(entry.file);
-            image = await mergedPdf.embedJpg(jpgBuf);
-          } else {
-            image = await mergedPdf.embedJpg(arrayBuffer);
-          }
-          const { width, height } = image.scale(1);
-          const page = mergedPdf.addPage([width, height]);
-          page.drawImage(image, { x: 0, y: 0, width, height });
+          // Convert all images to compressed JPEG for smaller file size
+          const jpgBuf = await compressImage(entry.file);
+          const image = await mergedPdf.embedJpg(jpgBuf);
+          // Scale image to fit A4 width, maintain aspect ratio
+          const A4_WIDTH = 595.28;
+          const A4_HEIGHT = 841.89;
+          const { width: imgW, height: imgH } = image.scale(1);
+          const scale = A4_WIDTH / imgW;
+          const scaledHeight = imgH * scale;
+          const pageHeight = Math.max(scaledHeight, A4_HEIGHT);
+          const page = mergedPdf.addPage([A4_WIDTH, pageHeight]);
+          // Draw image at top of page
+          page.drawImage(image, {
+            x: 0,
+            y: pageHeight - scaledHeight,
+            width: A4_WIDTH,
+            height: scaledHeight,
+          });
         }
       }
 
-      setProgress('Generating PDF...');
-      const pdfBytes = await mergedPdf.save();
+      setProgress('Compressing PDF...');
+      const pdfBytes = await mergedPdf.save({
+        useObjectStreams: true,
+        addDefaultPage: false,
+      });
       const blob = new Blob([pdfBytes], { type: 'application/pdf' });
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
@@ -261,9 +289,50 @@ export default function PdfMerger() {
   const totalPages = previews.length;
 
   return (
-    <div className="layout">
+    <>
+      <header className="header">
+        <div className="header-inner">
+          <div className="header-icon">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
+              <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z" strokeLinecap="round" strokeLinejoin="round" />
+              <path d="M14 2v6h6" strokeLinecap="round" strokeLinejoin="round" />
+              <path d="M12 18v-6" strokeLinecap="round" strokeLinejoin="round" />
+              <path d="M9 15h6" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+          </div>
+          <div>
+            <h1>PDF Merger</h1>
+            <p>Merge PDFs &amp; images locally — your files never leave your device.</p>
+          </div>
+          <div className="header-actions">
+            {files.length > 0 && (
+              <button
+                type="button"
+                className="btn btn-primary btn-header-merge"
+                onClick={mergePdfs}
+                disabled={merging}
+              >
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                  <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4" strokeLinecap="round" strokeLinejoin="round" />
+                  <path d="M7 10l5 5 5-5" strokeLinecap="round" strokeLinejoin="round" />
+                  <path d="M12 15V3" strokeLinecap="round" strokeLinejoin="round" />
+                </svg>
+                Merge &amp; Download
+              </button>
+            )}
+            <div className="privacy-badge">
+              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
+                <path d="M7 11V7a5 5 0 0110 0v4" />
+              </svg>
+              Private
+            </div>
+          </div>
+        </div>
+      </header>
+      <div className={`layout${files.length === 0 ? ' layout-centered' : ''}`}>
       {/* ── LEFT PANEL: Upload + File List ── */}
-      <div className="panel-left">
+      <div className={`panel-left${files.length === 0 ? ' panel-centered' : ''}`}>
         {/* Drop zone */}
         <div
           className={`drop-zone${dragOverZone ? ' drag-over' : ''}`}
@@ -350,18 +419,10 @@ export default function PdfMerger() {
         )}
       </div>
 
-      {/* ── RIGHT PANEL: Combined Preview ── */}
+      {/* ── RIGHT PANEL: Combined Preview (hidden when no files) ── */}
+      {files.length > 0 && (
       <div className="panel-right" ref={previewRef}>
-        {files.length === 0 ? (
-          <div className="preview-empty">
-            <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.2">
-              <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z" strokeLinecap="round" strokeLinejoin="round" />
-              <path d="M14 2v6h6" strokeLinecap="round" strokeLinejoin="round" />
-            </svg>
-            <p>Preview will appear here</p>
-            <span>Upload files to see a combined preview</span>
-          </div>
-        ) : (
+        {(
           <div className="preview-scroll">
             <div className="preview-header">
               <span className="preview-title">Combined Preview</span>
@@ -391,6 +452,7 @@ export default function PdfMerger() {
           </div>
         )}
       </div>
+      )}
 
       {/* Progress overlay */}
       {merging && (
@@ -405,6 +467,7 @@ export default function PdfMerger() {
       {/* Toast */}
       {toast && <div className="toast">{toast}</div>}
     </div>
+    </>
   );
 }
 
@@ -473,24 +536,33 @@ function formatSize(bytes) {
   return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
 }
 
-function convertToJpg(file) {
+function compressImage(file, maxDimension = 1600, quality = 0.75) {
   return new Promise((resolve, reject) => {
     const img = new Image();
     img.onload = () => {
+      let { naturalWidth: w, naturalHeight: h } = img;
+
+      // Scale down large images
+      if (w > maxDimension || h > maxDimension) {
+        const ratio = Math.min(maxDimension / w, maxDimension / h);
+        w = Math.round(w * ratio);
+        h = Math.round(h * ratio);
+      }
+
       const canvas = document.createElement('canvas');
-      canvas.width = img.naturalWidth;
-      canvas.height = img.naturalHeight;
+      canvas.width = w;
+      canvas.height = h;
       const ctx = canvas.getContext('2d');
       ctx.fillStyle = '#ffffff';
-      ctx.fillRect(0, 0, canvas.width, canvas.height);
-      ctx.drawImage(img, 0, 0);
+      ctx.fillRect(0, 0, w, h);
+      ctx.drawImage(img, 0, 0, w, h);
       canvas.toBlob(
         (blob) => {
           if (!blob) return reject(new Error('Canvas conversion failed'));
           blob.arrayBuffer().then(resolve).catch(reject);
         },
         'image/jpeg',
-        0.92,
+        quality,
       );
       URL.revokeObjectURL(img.src);
     };
