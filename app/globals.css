@@ -13,15 +13,17 @@
   --border: #e2e5ea;
   --border-hover: #c0c5ce;
   --text: #111827;
-  --text-secondary: #6b7280;
-  --text-tertiary: #9ca3af;
+  /* --text-secondary / --text-tertiary darkened to meet WCAG AA (4.5:1) on --bg/--surface.
+     Previous values (#6b7280 / #9ca3af) failed at ~4.4:1 and ~2.5:1 respectively. */
+  --text-secondary: #585f6b;
+  --text-tertiary: #6b7280;
   --primary: #4361ee;
   --primary-hover: #3651d4;
   --primary-light: #eef0fd;
   --primary-glow: rgba(67, 97, 238, 0.12);
-  --danger: #ef4444;
+  --danger: #dc2626;
   --danger-bg: #fef2f2;
-  --success: #10b981;
+  --success: #047857; /* darker green: passes AA on --success-bg for the "Private" badge */
   --success-bg: #ecfdf5;
   --radius: 14px;
   --radius-sm: 10px;
@@ -460,6 +462,17 @@ body {
   background: var(--danger-bg);
 }
 
+/* Touch devices: enlarge tap targets to the 44px minimum. */
+@media (pointer: coarse) {
+  .move-btn,
+  .file-remove {
+    min-width: 44px;
+    min-height: 44px;
+    align-items: center;
+    justify-content: center;
+  }
+}
+
 /* ─────────────────────── Merge Bar ─────────────────────── */
 
 .merge-bar {
@@ -480,27 +493,6 @@ body {
 }
 
 /* ─────────────────────── Preview Panel ─────────────────────── */
-
-.preview-empty {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  height: 100%;
-  color: var(--text-tertiary);
-  text-align: center;
-  gap: 10px;
-}
-
-.preview-empty p {
-  font-size: 0.92rem;
-  font-weight: 500;
-  color: var(--text-secondary);
-}
-
-.preview-empty span {
-  font-size: 0.78rem;
-}
 
 .preview-scroll {
   height: 100%;
@@ -575,8 +567,15 @@ body {
 .preview-loading {
   padding: 40px;
   display: flex;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
+  gap: 10px;
+}
+
+.preview-loading-text {
+  font-size: 0.72rem;
+  color: var(--text-tertiary);
 }
 
 .preview-page-label {
@@ -687,6 +686,15 @@ body {
   pointer-events: none;
 }
 
+/* Errors stay on screen longer (matches the 5s JS timeout) and read as a warning. */
+.toast.toast-error {
+  background: #7f1d1d;
+  animation: toastIn 200ms ease, toastOut 200ms ease 4.8s forwards;
+  max-width: min(90vw, 520px);
+  white-space: normal;
+  text-align: center;
+}
+
 @keyframes toastIn {
   from { opacity: 0; transform: translateX(-50%) translateY(12px); }
   to { opacity: 1; transform: translateX(-50%) translateY(0); }
@@ -761,5 +769,53 @@ body {
 
   .progress-card {
     padding: 28px 28px;
+  }
+}
+
+/* ─────────────────────── Accessibility utilities ─────────────────────── */
+
+/* Visually hidden but available to screen readers (used for live status announcements). */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* Visible focus indicator for keyboard users on every interactive control. */
+.btn:focus-visible,
+.btn-ghost:focus-visible,
+.browse-link:focus-visible,
+.move-btn:focus-visible,
+.file-remove:focus-visible,
+.file-item:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+}
+
+/* Respect users who prefer reduced motion: neutralize spinners, fades, and transforms. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+
+  .spinner,
+  .spinner-sm {
+    animation: none !important;
+    border-top-color: var(--primary);
+  }
+
+  .btn:active {
+    transform: none;
   }
 }

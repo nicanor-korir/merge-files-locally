@@ -5,11 +5,69 @@ import { PDFDocument } from 'pdf-lib';
 
 const ACCEPTED = '.pdf,.png,.jpg,.jpeg,.webp';
 const ACCEPTED_TYPES = ['application/pdf', 'image/png', 'image/jpeg', 'image/webp'];
+const ACCEPTED_EXTENSIONS = ['pdf', 'png', 'jpg', 'jpeg', 'webp'];
+
+// A4 page dimensions in points.
+const A4_WIDTH = 595.28;
+const A4_HEIGHT = 841.89;
+
+// Soft thresholds for warning the user about large in-memory merges (no hard limit).
+const LARGE_FILE_COUNT = 50;
+const LARGE_TOTAL_BYTES = 150 * 1024 * 1024; // 150 MB
 
 // Name the downloaded file after the first merged file, e.g. "report.pdf" → "report-merged.pdf"
 function buildDownloadName(firstName) {
   const base = (firstName || 'merged').replace(/\.[^.]+$/, '').trim();
   return `${base || 'merged'}-merged.pdf`;
+}
+
+// crypto.randomUUID() only exists in secure contexts (HTTPS / localhost). This app is
+// designed to run offline from any static server or file://, where it may be undefined —
+// fall back to a getRandomValues-based UUID so adding files never throws.
+function generateId() {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    try {
+      return crypto.randomUUID();
+    } catch {
+      /* fall through */
+    }
+  }
+  if (typeof crypto !== 'undefined' && typeof crypto.getRandomValues === 'function') {
+    const buf = new Uint8Array(16);
+    crypto.getRandomValues(buf);
+    buf[6] = (buf[6] & 0x0f) | 0x40; // version 4
+    buf[8] = (buf[8] & 0x3f) | 0x80; // variant
+    const hex = [...buf].map((b) => b.toString(16).padStart(2, '0'));
+    return `${hex.slice(0, 4).join('')}-${hex.slice(4, 6).join('')}-${hex.slice(6, 8).join('')}-${hex.slice(8, 10).join('')}-${hex.slice(10, 16).join('')}`;
+  }
+  // Last-resort fallback (non-cryptographic, only for ancient/locked-down environments).
+  return `id-${performance.now().toString(36).replace('.', '')}-${(performance.now() * 1000 % 1e9 | 0).toString(36)}`;
+}
+
+// File-type validation that tolerates an empty/missing MIME type by falling back to the
+// extension. Browsers (especially on Linux, or for dragged files) sometimes report
+// file.type === '', which would otherwise silently reject a perfectly valid PDF/image.
+function fileExtension(name) {
+  const dot = name.lastIndexOf('.');
+  return dot === -1 ? '' : name.slice(dot + 1).toLowerCase();
+}
+
+function isAcceptedFile(file) {
+  if (file.type && ACCEPTED_TYPES.includes(file.type)) return true;
+  if (!file.type && ACCEPTED_EXTENSIONS.includes(fileExtension(file.name))) return true;
+  return false;
+}
+
+// Normalize a file to a canonical MIME type, deriving it from the extension when the
+// browser didn't supply one. Guarantees downstream code always sees a real type.
+function resolveType(file) {
+  if (file.type) return file.type;
+  const ext = fileExtension(file.name);
+  if (ext === 'pdf') return 'application/pdf';
+  if (ext === 'png') return 'image/png';
+  if (ext === 'webp') return 'image/webp';
+  if (ext === 'jpg' || ext === 'jpeg') return 'image/jpeg';
+  return '';
 }
 
 export default function PdfMerger() {
@@ -18,19 +76,40 @@ export default function PdfMerger() {
   const [merging, setMerging] = useState(false);
   const [progress, setProgress] = useState('');
   const [toast, setToast] = useState(null);
+  const [liveMessage, setLiveMessage] = useState('');
   const [dragOverZone, setDragOverZone] = useState(false);
   const [draggedId, setDraggedId] = useState(null);
   const [dragTargetId, setDragTargetId] = useState(null);
   const fileInputRef = useRef(null);
   const toastTimer = useRef(null);
   const previewRef = useRef(null);
+  // Mirror of `files` so the unmount cleanup can revoke object URLs without re-subscribing.
+  const filesRef = useRef(files);
+  filesRef.current = files;
+
+  // Revoke any outstanding thumbnail object URLs when the component unmounts.
+  useEffect(() => {
+    return () => {
+      filesRef.current.forEach((f) => {
+        if (f.thumbUrl) URL.revokeObjectURL(f.thumbUrl);
+      });
+    };
+  }, []);
 
   // ── Toast ──
 
-  const showToast = useCallback((msg) => {
-    setToast(msg);
+  const showToast = useCallback((msg, isError = false) => {
+    setToast({ message: msg, isError });
     clearTimeout(toastTimer.current);
-    toastTimer.current = setTimeout(() => setToast(null), 2500);
+    // Errors linger a little longer so they can be read.
+    toastTimer.current = setTimeout(() => setToast(null), isError ? 5000 : 2500);
+  }, []);
+
+  // Announce a transient status to screen readers. A leading zero-width space forces the
+  // live region to change even when the same message repeats (e.g. moving a file twice),
+  // so it is re-announced.
+  const announce = useCallback((msg) => {
+    setLiveMessage((prev) => (prev === msg ? `​${msg}` : msg));
   }, []);
 
   // ── Generate previews whenever files change ──
@@ -51,6 +130,8 @@ export default function PdfMerger() {
         if (cancelled) return;
 
         if (entry.type === 'application/pdf') {
+          let loadingTask = null;
+          let pdf = null;
           try {
             const arrayBuffer = await entry.file.arrayBuffer();
             const pdfjs = await import('pdfjs-dist/legacy/build/pdf.js');
@@ -58,11 +139,16 @@ export default function PdfMerger() {
             if (!pdfjsLib.GlobalWorkerOptions.workerSrc) {
               pdfjsLib.GlobalWorkerOptions.workerSrc = '/pdf.worker.min.js';
             }
-            const loadingTask = pdfjsLib.getDocument({ data: new Uint8Array(arrayBuffer) });
-            const pdf = await loadingTask.promise;
+            // isEvalSupported: false mitigates CVE-2024-4367 (arbitrary JS execution from a
+            // crafted PDF via font handling) when rendering untrusted, user-supplied PDFs.
+            loadingTask = pdfjsLib.getDocument({
+              data: new Uint8Array(arrayBuffer),
+              isEvalSupported: false,
+            });
+            pdf = await loadingTask.promise;
 
             for (let p = 1; p <= pdf.numPages; p++) {
-              if (cancelled) return;
+              if (cancelled) break;
               globalPage++;
               const page = await pdf.getPage(p);
               const scale = 1.2;
@@ -95,6 +181,10 @@ export default function PdfMerger() {
               dataUrl: null,
               error: true,
             });
+          } finally {
+            // Tear down pdf.js work so a superseded run doesn't keep rendering in the background.
+            try { await pdf?.cleanup?.(); } catch { /* ignore */ }
+            try { await loadingTask?.destroy?.(); } catch { /* ignore */ }
           }
         } else {
           globalPage++;
@@ -123,28 +213,43 @@ export default function PdfMerger() {
 
   const addFiles = useCallback((fileList) => {
     const newEntries = [];
-    let skipped = 0;
+    let skippedUnsupported = 0;
+    let skippedEmpty = 0;
 
     for (const file of fileList) {
-      if (!ACCEPTED_TYPES.includes(file.type)) {
-        skipped++;
+      if (!isAcceptedFile(file)) {
+        skippedUnsupported++;
         continue;
       }
+      if (file.size === 0) {
+        skippedEmpty++;
+        continue;
+      }
+      const type = resolveType(file);
       newEntries.push({
-        id: crypto.randomUUID(),
+        id: generateId(),
         file,
         name: file.name,
         size: file.size,
-        type: file.type,
-        thumbUrl: file.type.startsWith('image/') ? URL.createObjectURL(file) : null,
+        type,
+        thumbUrl: type.startsWith('image/') ? URL.createObjectURL(file) : null,
       });
     }
 
-    if (skipped > 0) {
-      showToast(`${skipped} file${skipped > 1 ? 's' : ''} skipped (unsupported format)`);
+    if (skippedUnsupported > 0) {
+      showToast(`${skippedUnsupported} file${skippedUnsupported > 1 ? 's' : ''} skipped (unsupported format)`);
+    } else if (skippedEmpty > 0) {
+      showToast(`${skippedEmpty} empty file${skippedEmpty > 1 ? 's' : ''} skipped`);
     }
     if (newEntries.length > 0) {
-      setFiles((prev) => [...prev, ...newEntries]);
+      const next = [...filesRef.current, ...newEntries];
+      setFiles(next);
+      // Soft warning: large batches are processed entirely in-memory and can hang or
+      // crash the tab. We don't block — just let the user know.
+      const totalBytes = next.reduce((sum, f) => sum + f.size, 0);
+      if (next.length > LARGE_FILE_COUNT || totalBytes > LARGE_TOTAL_BYTES) {
+        showToast('Large selection — merging may take a while or use a lot of memory.', true);
+      }
     }
   }, [showToast]);
 
@@ -154,16 +259,22 @@ export default function PdfMerger() {
     setFiles((prev) => {
       const entry = prev.find((f) => f.id === id);
       if (entry?.thumbUrl) URL.revokeObjectURL(entry.thumbUrl);
+      if (entry) announce(`Removed ${entry.name}`);
       return prev.filter((f) => f.id !== id);
     });
-  }, []);
+  }, [announce]);
 
   const clearAll = useCallback(() => {
-    setFiles((prev) => {
-      prev.forEach((f) => { if (f.thumbUrl) URL.revokeObjectURL(f.thumbUrl); });
-      return [];
-    });
-  }, []);
+    const current = filesRef.current;
+    if (current.length === 0) return;
+    // Guard against accidental loss of the whole queue.
+    if (typeof window !== 'undefined' && !window.confirm(`Remove all ${current.length} files?`)) {
+      return;
+    }
+    current.forEach((f) => { if (f.thumbUrl) URL.revokeObjectURL(f.thumbUrl); });
+    announce('Cleared all files');
+    setFiles([]);
+  }, [announce]);
 
   // ── Drop zone ──
 
@@ -211,9 +322,10 @@ export default function PdfMerger() {
       const newIdx = idx + direction;
       if (newIdx < 0 || newIdx >= copy.length) return prev;
       [copy[idx], copy[newIdx]] = [copy[newIdx], copy[idx]];
+      announce(`Moved ${copy[newIdx].name} to position ${newIdx + 1} of ${copy.length}`);
       return copy;
     });
-  }, []);
+  }, [announce]);
 
   // ── Merge & Download ──
 
@@ -221,52 +333,54 @@ export default function PdfMerger() {
     if (files.length === 0) return;
     setMerging(true);
 
+    const failed = []; // names of files that couldn't be processed
+
     try {
       const mergedPdf = await PDFDocument.create();
 
       for (let i = 0; i < files.length; i++) {
         const entry = files[i];
         setProgress(`Processing ${i + 1} of ${files.length}: ${entry.name}`);
-        const arrayBuffer = await entry.file.arrayBuffer();
 
-        if (entry.type === 'application/pdf') {
-          const sourcePdf = await PDFDocument.load(arrayBuffer, { ignoreEncryption: true });
-          const pages = await mergedPdf.copyPages(sourcePdf, sourcePdf.getPageIndices());
-          pages.forEach((page) => {
-            // Scale PDF pages to A4 width while preserving aspect ratio
-            const A4_WIDTH = 595.28;
-            const A4_HEIGHT = 841.89;
-            const { width, height } = page.getSize();
-            const scale = A4_WIDTH / width;
-            const newHeight = height * scale;
-            page.setSize(A4_WIDTH, Math.max(newHeight, A4_HEIGHT));
-            page.scaleContent(scale, scale);
-            // Reposition content to top of page
-            if (newHeight < A4_HEIGHT) {
-              page.translateContent(0, A4_HEIGHT - newHeight);
-            }
-            mergedPdf.addPage(page);
-          });
-        } else {
-          // Convert all images to compressed JPEG for smaller file size
-          const jpgBuf = await compressImage(entry.file);
-          const image = await mergedPdf.embedJpg(jpgBuf);
-          // Scale image to fit A4 width, maintain aspect ratio
-          const A4_WIDTH = 595.28;
-          const A4_HEIGHT = 841.89;
-          const { width: imgW, height: imgH } = image.scale(1);
-          const scale = A4_WIDTH / imgW;
-          const scaledHeight = imgH * scale;
-          const pageHeight = Math.max(scaledHeight, A4_HEIGHT);
-          const page = mergedPdf.addPage([A4_WIDTH, pageHeight]);
-          // Draw image at top of page
-          page.drawImage(image, {
-            x: 0,
-            y: pageHeight - scaledHeight,
-            width: A4_WIDTH,
-            height: scaledHeight,
-          });
+        // Per-file isolation: a single corrupt / encrypted / undecodable file must not
+        // discard the whole merge. Skip it, remember it, and report at the end.
+        try {
+          const arrayBuffer = await entry.file.arrayBuffer();
+
+          if (entry.type === 'application/pdf') {
+            const sourcePdf = await PDFDocument.load(arrayBuffer, { ignoreEncryption: true });
+            const pages = await mergedPdf.copyPages(sourcePdf, sourcePdf.getPageIndices());
+            pages.forEach((page) => {
+              fitPageToA4(page);
+              mergedPdf.addPage(page);
+            });
+          } else {
+            // Convert all images to compressed baseline JPEG for smaller, embeddable output.
+            const jpgBuf = await compressImage(entry.file);
+            const image = await mergedPdf.embedJpg(jpgBuf);
+            const { width: imgW, height: imgH } = image.scale(1);
+            const { drawW, drawH, pageW, pageH } = fitToA4Box(imgW, imgH);
+            const page = mergedPdf.addPage([pageW, pageH]);
+            // Center horizontally; pin to the top of the page.
+            page.drawImage(image, {
+              x: (pageW - drawW) / 2,
+              y: pageH - drawH,
+              width: drawW,
+              height: drawH,
+            });
+          }
+        } catch (fileErr) {
+          console.error('Skipping file during merge:', entry.name, fileErr);
+          failed.push(entry.name);
         }
+      }
+
+      if (mergedPdf.getPageCount() === 0) {
+        throw new Error(
+          failed.length
+            ? 'None of the files could be merged (all were corrupt, encrypted, or unreadable).'
+            : 'No pages to merge.',
+        );
       }
 
       setProgress('Compressing PDF...');
@@ -280,12 +394,18 @@ export default function PdfMerger() {
       a.href = url;
       a.download = buildDownloadName(files[0]?.name);
       a.click();
-      URL.revokeObjectURL(url);
+      // Defer revoke: revoking immediately after click() can abort the download in some
+      // browsers (older Firefox / certain download managers).
+      setTimeout(() => URL.revokeObjectURL(url), 10000);
 
-      showToast('PDF merged and downloaded!');
+      if (failed.length) {
+        showToast(`Merged, but skipped ${failed.length} unreadable file${failed.length > 1 ? 's' : ''}: ${failed.join(', ')}`);
+      } else {
+        showToast('PDF merged and downloaded!');
+      }
     } catch (err) {
       console.error('Merge failed:', err);
-      showToast('Merge failed: ' + err.message);
+      showToast('Merge failed: ' + err.message, true);
     } finally {
       setMerging(false);
       setProgress('');
@@ -299,7 +419,7 @@ export default function PdfMerger() {
       <header className="header">
         <div className="header-inner">
           <div className="header-icon">
-            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true" focusable="false">
               <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z" strokeLinecap="round" strokeLinejoin="round" />
               <path d="M14 2v6h6" strokeLinecap="round" strokeLinejoin="round" />
               <path d="M12 18v-6" strokeLinecap="round" strokeLinejoin="round" />
@@ -318,7 +438,7 @@ export default function PdfMerger() {
                 onClick={mergePdfs}
                 disabled={merging}
               >
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" aria-hidden="true" focusable="false">
                   <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4" strokeLinecap="round" strokeLinejoin="round" />
                   <path d="M7 10l5 5 5-5" strokeLinecap="round" strokeLinejoin="round" />
                   <path d="M12 15V3" strokeLinecap="round" strokeLinejoin="round" />
@@ -327,7 +447,7 @@ export default function PdfMerger() {
               </button>
             )}
             <div className="privacy-badge">
-              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" aria-hidden="true" focusable="false">
                 <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
                 <path d="M7 11V7a5 5 0 0110 0v4" />
               </svg>
@@ -336,29 +456,31 @@ export default function PdfMerger() {
           </div>
         </div>
       </header>
-      <div className={`layout${files.length === 0 ? ' layout-centered' : ''}`}>
+      <main className={`layout${files.length === 0 ? ' layout-centered' : ''}`}>
       {/* ── LEFT PANEL: Upload + File List ── */}
       <div className={`panel-left${files.length === 0 ? ' panel-centered' : ''}`}>
-        {/* Drop zone */}
+        {/* Drop zone — drag/drop is a mouse affordance; the "browse" button is the
+            keyboard/AT entry point, so this wrapper is not itself a button. */}
         <div
           className={`drop-zone${dragOverZone ? ' drag-over' : ''}`}
           onClick={() => fileInputRef.current?.click()}
-          onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); fileInputRef.current?.click(); } }}
           onDragOver={(e) => { e.preventDefault(); setDragOverZone(true); }}
           onDragLeave={() => setDragOverZone(false)}
           onDrop={onDropZoneDrop}
-          tabIndex={0}
-          role="button"
-          aria-label="Upload files"
         >
-          <svg className="drop-zone-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+          <svg className="drop-zone-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden="true" focusable="false">
             <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4" strokeLinecap="round" strokeLinejoin="round" />
             <path d="M17 8l-5-5-5 5" strokeLinecap="round" strokeLinejoin="round" />
             <path d="M12 3v12" strokeLinecap="round" strokeLinejoin="round" />
           </svg>
           <p className="drop-zone-text">
             Drop files here or{' '}
-            <button type="button" className="browse-link" onClick={(e) => { e.stopPropagation(); fileInputRef.current?.click(); }}>
+            <button
+              type="button"
+              className="browse-link"
+              aria-label="Browse for PDF or image files to merge"
+              onClick={(e) => { e.stopPropagation(); fileInputRef.current?.click(); }}
+            >
               browse
             </button>
           </p>
@@ -375,7 +497,7 @@ export default function PdfMerger() {
 
         {/* File list */}
         {files.length > 0 && (
-          <section className="file-section">
+          <section className="file-section" aria-label="Selected files">
             <div className="section-bar">
               <h2>
                 Files <span className="count-badge">{files.length}</span>
@@ -384,8 +506,8 @@ export default function PdfMerger() {
                 Clear all
               </button>
             </div>
-            <p className="reorder-hint">Drag to reorder</p>
-            <ul className="file-list">
+            <p className="reorder-hint">Drag to reorder, or use the arrow buttons</p>
+            <ul className="file-list" aria-label="Files to merge, in order">
               {files.map((entry, index) => (
                 <FileItem
                   key={entry.id}
@@ -412,7 +534,7 @@ export default function PdfMerger() {
                 onClick={mergePdfs}
                 disabled={merging}
               >
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" aria-hidden="true" focusable="false">
                   <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4" strokeLinecap="round" strokeLinejoin="round" />
                   <path d="M7 10l5 5 5-5" strokeLinecap="round" strokeLinejoin="round" />
                   <path d="M12 15V3" strokeLinecap="round" strokeLinejoin="round" />
@@ -427,52 +549,61 @@ export default function PdfMerger() {
 
       {/* ── RIGHT PANEL: Combined Preview (hidden when no files) ── */}
       {files.length > 0 && (
-      <div className="panel-right" ref={previewRef}>
-        {(
-          <div className="preview-scroll">
-            <div className="preview-header">
-              <span className="preview-title">Combined Preview</span>
-              <span className="preview-pages">{totalPages} page{totalPages !== 1 ? 's' : ''}</span>
-            </div>
-            <div className="preview-pages-list">
-              {previews.map((p, i) => (
-                <div key={`${p.fileId}-${p.pageIndex}`} className="preview-page">
-                  <div className="preview-page-inner">
-                    {p.error ? (
-                      <div className="preview-error">Could not render PDF</div>
-                    ) : p.dataUrl ? (
-                      <img src={p.dataUrl} alt={`Page ${p.globalPage}`} className="preview-img" />
-                    ) : (
-                      <div className="preview-loading"><div className="spinner-sm" /></div>
-                    )}
-                  </div>
-                  <div className="preview-page-label">
-                    <span className="preview-page-num">Page {p.globalPage}</span>
-                    <span className="preview-page-source" title={p.fileName}>
-                      {p.fileName}{p.totalPages > 1 ? ` (p.${p.pageIndex})` : ''}
-                    </span>
-                  </div>
-                </div>
-              ))}
-            </div>
+      <section className="panel-right" ref={previewRef} aria-labelledby="preview-heading">
+        <div className="preview-scroll">
+          <div className="preview-header">
+            <h2 id="preview-heading" className="preview-title">Combined Preview</h2>
+            <span className="preview-pages">{totalPages} page{totalPages !== 1 ? 's' : ''}</span>
           </div>
-        )}
-      </div>
+          <div className="preview-pages-list">
+            {previews.map((p) => (
+              <div key={`${p.fileId}-${p.pageIndex}`} className="preview-page">
+                <div className="preview-page-inner">
+                  {p.error ? (
+                    <div className="preview-error">Could not render PDF</div>
+                  ) : p.dataUrl ? (
+                    <img src={p.dataUrl} alt={`Page ${p.globalPage} of ${p.fileName}`} className="preview-img" />
+                  ) : (
+                    <div className="preview-loading">
+                      <div className="spinner-sm" aria-hidden="true" />
+                      <span className="preview-loading-text">Rendering…</span>
+                    </div>
+                  )}
+                </div>
+                <div className="preview-page-label">
+                  <span className="preview-page-num">Page {p.globalPage}</span>
+                  <span className="preview-page-source" title={p.fileName}>
+                    {p.fileName}{p.totalPages > 1 ? ` (p.${p.pageIndex})` : ''}
+                  </span>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
       )}
 
-      {/* Progress overlay */}
+      {/* Progress overlay — announced to assistive tech */}
       {merging && (
-        <div className="progress-overlay">
+        <div className="progress-overlay" role="status" aria-live="polite" aria-busy="true">
           <div className="progress-card">
-            <div className="spinner" />
-            <p className="progress-text">{progress}</p>
+            <div className="spinner" aria-hidden="true" />
+            <p className="progress-text">{progress || 'Working…'}</p>
           </div>
         </div>
       )}
 
-      {/* Toast */}
-      {toast && <div className="toast">{toast}</div>}
-    </div>
+      {/* Live region for status announcements (reorder, clear). Always mounted so updates
+          are reliably announced. */}
+      <div className="sr-only" role="status" aria-live="polite">{liveMessage}</div>
+
+      {/* Toast — polite for info, assertive for errors */}
+      {toast && (
+        <div className={`toast${toast.isError ? ' toast-error' : ''}`} role={toast.isError ? 'alert' : 'status'} aria-live={toast.isError ? 'assertive' : 'polite'}>
+          {toast.message}
+        </div>
+      )}
+    </main>
     </>
   );
 }
@@ -492,8 +623,8 @@ function FileItem({ entry, index, total, isDragging, isDragTarget, onDragStart, 
       onDrop={() => onDrop(entry.id)}
       onDragEnd={onDragEnd}
     >
-      <span className="drag-handle" title="Drag to reorder">
-        <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor">
+      <span className="drag-handle" aria-hidden="true">
+        <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true" focusable="false">
           <circle cx="5.5" cy="3" r="1.2" />
           <circle cx="10.5" cy="3" r="1.2" />
           <circle cx="5.5" cy="8" r="1.2" />
@@ -503,7 +634,7 @@ function FileItem({ entry, index, total, isDragging, isDragTarget, onDragStart, 
         </svg>
       </span>
 
-      <span className="file-order">{index + 1}</span>
+      <span className="file-order" aria-hidden="true">{index + 1}</span>
 
       <div className={`file-thumb${isPdf ? ' pdf-thumb' : ''}`}>
         {entry.thumbUrl ? <img src={entry.thumbUrl} alt="" /> : 'PDF'}
@@ -512,23 +643,23 @@ function FileItem({ entry, index, total, isDragging, isDragTarget, onDragStart, 
       <div className="file-info">
         <div className="file-name" title={entry.name}>{entry.name}</div>
         <div className="file-meta">
-          {isPdf ? 'PDF' : entry.type.split('/')[1].toUpperCase()} &middot; {formatSize(entry.size)}
+          {isPdf ? 'PDF' : (entry.type.split('/')[1] || 'IMG').toUpperCase()} &middot; {formatSize(entry.size)}
         </div>
       </div>
 
-      <button type="button" className="move-btn" title="Move up" onClick={() => onMove(entry.id, -1)} disabled={index === 0}>
-        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+      <button type="button" className="move-btn" aria-label={`Move ${entry.name} up`} onClick={() => onMove(entry.id, -1)} disabled={index === 0}>
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" aria-hidden="true" focusable="false">
           <path d="M18 15l-6-6-6 6" strokeLinecap="round" strokeLinejoin="round" />
         </svg>
       </button>
-      <button type="button" className="move-btn" title="Move down" onClick={() => onMove(entry.id, 1)} disabled={index === total - 1}>
-        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+      <button type="button" className="move-btn" aria-label={`Move ${entry.name} down`} onClick={() => onMove(entry.id, 1)} disabled={index === total - 1}>
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" aria-hidden="true" focusable="false">
           <path d="M6 9l6 6 6-6" strokeLinecap="round" strokeLinejoin="round" />
         </svg>
       </button>
 
-      <button type="button" className="file-remove" title="Remove file" onClick={() => onRemove(entry.id)}>
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+      <button type="button" className="file-remove" aria-label={`Remove ${entry.name}`} onClick={() => onRemove(entry.id)}>
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true" focusable="false">
           <path d="M18 6L6 18M6 6l12 12" strokeLinecap="round" />
         </svg>
       </button>
@@ -545,8 +676,26 @@ function formatSize(bytes) {
 function compressImage(file, maxDimension = 1600, quality = 0.75) {
   return new Promise((resolve, reject) => {
     const img = new Image();
+    const objectUrl = URL.createObjectURL(file);
+    // Revoke exactly once, on every exit path (success or failure), to avoid leaks.
+    let revoked = false;
+    const cleanup = () => {
+      if (!revoked) {
+        revoked = true;
+        URL.revokeObjectURL(objectUrl);
+      }
+    };
+
     img.onload = () => {
       let { naturalWidth: w, naturalHeight: h } = img;
+
+      // Guard against images with no intrinsic dimensions (e.g. some SVGs) which would
+      // otherwise produce a zero-size canvas and a blank or broken page.
+      if (!w || !h) {
+        cleanup();
+        reject(new Error('Image has no intrinsic dimensions'));
+        return;
+      }
 
       // Scale down large images
       if (w > maxDimension || h > maxDimension) {
@@ -559,20 +708,75 @@ function compressImage(file, maxDimension = 1600, quality = 0.75) {
       canvas.width = w;
       canvas.height = h;
       const ctx = canvas.getContext('2d');
+      // JPEG has no alpha; flatten transparency onto white so transparent PNG/WebP
+      // regions render as white rather than black.
       ctx.fillStyle = '#ffffff';
       ctx.fillRect(0, 0, w, h);
       ctx.drawImage(img, 0, 0, w, h);
       canvas.toBlob(
         (blob) => {
+          cleanup();
           if (!blob) return reject(new Error('Canvas conversion failed'));
           blob.arrayBuffer().then(resolve).catch(reject);
         },
         'image/jpeg',
         quality,
       );
-      URL.revokeObjectURL(img.src);
     };
-    img.onerror = () => reject(new Error('Failed to load image'));
-    img.src = URL.createObjectURL(file);
+    img.onerror = () => {
+      cleanup();
+      reject(new Error('Failed to load image'));
+    };
+    img.src = objectUrl;
   });
+}
+
+// Resize a copied PDF page to fit within the A4 box, preserving aspect ratio and honoring
+// the page's /Rotate metadata. 90°/270° pages have swapped effective (visual) dimensions,
+// so the fit scale is computed against the visual box to avoid distortion.
+//
+// scaleContent()/translateContent() operate in the page's *unrotated* content coordinate
+// space. For unrotated pages that space matches the visual layout, so we scale the media
+// box to A4 and pin content to the top. For rotated pages, mapping a visual top-pin back
+// into content space is ambiguous; we instead size the page tightly to the scaled content
+// (no extra padding), which keeps the (already rotated) content correctly placed and
+// undistorted — the only thing the old code got visibly wrong.
+function fitPageToA4(page) {
+  const rotation = ((page.getRotation().angle % 360) + 360) % 360;
+  const rotated = rotation === 90 || rotation === 270;
+  const { width: mw, height: mh } = page.getSize();
+  const visW = rotated ? mh : mw;
+  const visH = rotated ? mw : mh;
+
+  const scale = Math.min(A4_WIDTH / visW, A4_HEIGHT / visH);
+  page.scaleContent(scale, scale);
+
+  if (rotated) {
+    // Size to the scaled media box; rotation already maps content to the visual box.
+    page.setSize(mw * scale, mh * scale);
+    return;
+  }
+
+  const scaledW = mw * scale;
+  const scaledH = mh * scale;
+  const pageW = Math.max(scaledW, A4_WIDTH);
+  const pageH = Math.max(scaledH, A4_HEIGHT);
+  page.setSize(pageW, pageH);
+  // Center horizontally, pin to the top of the page.
+  page.translateContent((pageW - scaledW) / 2, pageH - scaledH);
+}
+
+// Compute how to place an image of (imgW × imgH) within the A4 box: scale to fit, then
+// grow the page to at least A4 so single images still land on a full-size page.
+function fitToA4Box(imgW, imgH) {
+  const scale = Math.min(A4_WIDTH / imgW, A4_HEIGHT / imgH);
+  const drawW = imgW * scale;
+  const drawH = imgH * scale;
+  return {
+    scale,
+    drawW,
+    drawH,
+    pageW: Math.max(drawW, A4_WIDTH),
+    pageH: Math.max(drawH, A4_HEIGHT),
+  };
 }
