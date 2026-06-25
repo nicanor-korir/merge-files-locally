@@ -6,6 +6,12 @@ import { PDFDocument } from 'pdf-lib';
 const ACCEPTED = '.pdf,.png,.jpg,.jpeg,.webp';
 const ACCEPTED_TYPES = ['application/pdf', 'image/png', 'image/jpeg', 'image/webp'];
 
+// Name the downloaded file after the first merged file, e.g. "report.pdf" → "report-merged.pdf"
+function buildDownloadName(firstName) {
+  const base = (firstName || 'merged').replace(/\.[^.]+$/, '').trim();
+  return `${base || 'merged'}-merged.pdf`;
+}
+
 export default function PdfMerger() {
   const [files, setFiles] = useState([]);
   const [previews, setPreviews] = useState([]); // { fileId, pageIndex, dataUrl, label }
@@ -272,7 +278,7 @@ export default function PdfMerger() {
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = 'merged.pdf';
+      a.download = buildDownloadName(files[0]?.name);
       a.click();
       URL.revokeObjectURL(url);
 
