@@ -160,6 +160,15 @@ returns the same shape either way: `{ promise, cancel }`.
 - `MergeCancelled` and `describeSkipped` live in their own dependency-free modules so the page
   can import them without pulling pdf-lib into the main bundle.
 
+**Very long documents.** The page list is not virtualised; instead `.preview-page` carries
+`content-visibility: auto` with `contain-intrinsic-size: auto 800px`, so the browser skips
+layout and paint for pages nowhere near the viewport. Measured on a 2000-page document, a
+forced layout went from 2793ms (tab effectively frozen — screenshots timed out) to 290ms.
+React was never the bottleneck there: reordering re-rendered in ~50ms either way. True
+windowing was rejected deliberately — it would break find-in-page and complicate drag-and-drop
+for a case this handles in two CSS declarations, with graceful degradation on browsers that
+lack it.
+
 ⚠️ **`PageCard` is memoised and every callback it takes is stable.** Without that, each
 progress tick re-renders every card in the document. Moving the merge into a worker made this
 *worse*, because progress messages stopped being throttled by the blocked main thread: on a

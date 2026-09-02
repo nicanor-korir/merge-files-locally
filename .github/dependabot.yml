@@ -1,0 +1,24 @@
+# Keeping dependencies current is a security control here, not housekeeping: this app parses
+# untrusted PDFs and images in the browser, and pdfjs-dist was allowed to fall three majors
+# behind once already.
+version: 2
+updates:
+  - package-ecosystem: bun
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    groups:
+      # React and Next move together; separate PRs for them are just noise.
+      react:
+        patterns:
+          - react
+          - react-dom
+      next:
+        patterns:
+          - next
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly

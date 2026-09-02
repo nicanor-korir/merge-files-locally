@@ -547,6 +547,16 @@ body {
   width: 100%;
   max-width: 560px;
   animation: fadeIn 200ms ease;
+  /* Let the browser skip layout and paint for pages that are nowhere near the viewport.
+     Measured on a 2000-page document: a forced layout took 2793ms without this and the tab
+     was effectively frozen. React was never the problem there — reordering re-rendered in
+     53ms thanks to the memoised card — it was the cost of laying out 2000 subtrees.
+     `auto` in contain-intrinsic-size makes the browser remember each page's real height once
+     it has been rendered, so the scrollbar settles instead of jumping as you scroll. The
+     fallback is a rough A4-at-560px guess for pages not yet seen. Unlike `display: none`,
+     this content is still reachable by find-in-page and assistive tech. */
+  content-visibility: auto;
+  contain-intrinsic-size: auto 800px;
 }
 
 .preview-page.dragging {
