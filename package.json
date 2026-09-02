@@ -18,8 +18,8 @@
     "next": "^15.3.3",
     "pdf-lib": "^1.17.1",
     "pdfjs-dist": "^6.3.289",
-    "react": "^19.1.0",
-    "react-dom": "^19.1.0"
+    "react": "^19.2.8",
+    "react-dom": "^19.2.8"
   },
   "devDependencies": {
     "vitest": "^4.1.11"
