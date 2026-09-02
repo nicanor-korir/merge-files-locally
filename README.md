@@ -13,8 +13,11 @@ I can't trust some files on online tools, so I built a simple local solution
 
 - Upload PDF, PNG, JPG, JPEG, and WebP files
 - Drag-and-drop file upload (with extension fallback when the browser reports no MIME type)
-- Reorder files via drag-and-drop or arrow buttons
-- Live combined preview before merging
+- Rearrange, rotate, crop or delete **individual pages** — not just whole files
+- Reorder by dragging a page, or move a whole document as a block
+- Live page-by-page preview, rendered lazily so large documents stay responsive
+- Bookmarks in the output, one per source document
+- Cancel a long merge
 - Merge into a single PDF, fitted to the A4 page box (landscape and rotated pages handled,
   small pages never blown up)
 - Hyperlinks stay clickable in the right place; form fields are flattened so they can't be
@@ -77,9 +80,10 @@ bun run test
 ```
 
 Because the CSP blocks all outbound requests, this app has no error reporting — so the test
-suite is the only safety net. It builds real PDFs (linked, form-bearing, rotated, landscape,
-encrypted, page-less, corrupt) and asserts on the merged output. CI runs the tests, the static
-build, and a check that the committed pdf.js worker matches the installed `pdfjs-dist`.
+suite is the only safety net. 76 assertions: it builds real PDFs (linked, form-bearing,
+rotated, landscape, encrypted, page-less, corrupt), asserts on the merged output, and covers
+the page model and the rotation/crop coordinate maths. CI runs the tests, the static build,
+and a check that the committed pdf.js worker matches the installed `pdfjs-dist`.
 
 > **Note:** `bun install` and `bun run build` automatically copy the pdf.js worker into
 > `public/pdf.worker.min.js` (via `scripts/copy-pdf-worker.mjs`), keeping it in lock-step with

@@ -19,12 +19,13 @@ app/
   layout.js        — Root layout: metadata, CSP <meta>, global styles
   globals.css      — All styles (CSS custom properties, responsive layout, a11y utilities)
   page.js          — Simple wrapper that renders PdfMerger
-  pdf-merger.js    — Main client component: UI, state, previews (no merge logic)
+  pdf-merger.js    — Main client component: UI, state, lazy page rendering (no merge logic)
 lib/
   merge.js         — mergeDocuments(): the whole merge pipeline, DOM-free and unit-tested
-  pdf-geometry.js  — A4 constants, fitPageToA4, fitToA4Box, translateAnnotations
+  pages.js         — The page model: reconcile, reorder, rotate, crop, remove (all pure)
+  pdf-geometry.js  — A4 fitting, annotation transforms, rotation/crop → content-space maths
   file-types.js    — Validation, MIME resolution, download naming, id generation
-  compress-image.js— Browser-only canvas → baseline JPEG conversion
+  compress-image.js— Browser-only canvas → baseline JPEG, applying rotation + crop
   *.test.js        — Vitest suites (run in Node)
   __fixtures__/    — Programmatic PDF builders + a 1x1 baseline JPEG
 .github/workflows/
@@ -59,6 +60,45 @@ bun run test:watch     # Re-run tests on change
 - Uses `output: 'export'` in Next.js config for fully static site generation
 - No Node.js server required in production — can be hosted on any static file server
 - Build outputs to `out/` directory
+
+### The Page Model
+State is **`pages[]`, not `files[]`**. A page entry is one page of the *output*:
+
+```javascript
+{ id, fileId, sourceIndex, rotation, crop }
+```
+
+It holds no pixels and no bytes — only a pointer back to a source document plus the transforms
+the user applied. Everything else follows from that:
+
+- **Reordering, rotating, cropping and deleting are all O(1) state edits.** None of them
+  invalidate a rendered preview, because `renderKey(page)` is `fileId:sourceIndex` and
+  deliberately excludes rotation and crop (both are re-applied over the cached bitmap).
+- Pages from different documents can interleave freely; the output is exactly the page order.
+- `files[]` still exists, but only as the list of *sources* — what the user added, not what
+  the output looks like.
+
+`reconcilePages()` keeps the two in step: pages of a removed file drop out, a new file appends
+its pages, and everything else keeps its position and transforms. `seenFileIds` is what stops
+a document the user has emptied page by page from silently refilling itself.
+
+Whole documents can still be moved as a block (`moveFileBlock`), but only while
+`arePagesGroupedByFile()` holds — once the user has interleaved pages by hand there is no
+block left to move, and the arrows disable rather than silently regrouping their work.
+
+### Preview Rendering
+- Pages render **lazily**, on `IntersectionObserver` intersection with a 600px margin, so a
+  400-page document does not rasterise 400 pages before the user scrolls.
+- Rendered pages are cached as **`ImageBitmap`s keyed by `renderKey`**, not base64 data URLs
+  in React state. The cache is capped at `MAX_CACHED_RASTERS`; evicted entries are *dropped*
+  rather than `close()`d, because a component may still hold one and drawing a closed bitmap
+  throws.
+- Each source PDF is opened **once** with pdf.js and kept open while it is in the list
+  (`docsRef`), so rendering page 40 does not re-read the file. The document is destroyed when
+  the file is removed or the component unmounts.
+- `drawPage()` applies rotation and crop over the cached bitmap **in the same order as
+  `compressImage()`** — rotate, then crop the rotated result. The preview is what the user
+  cropped against, so any divergence would surface as output that does not match what they saw.
 
 ### Client-Side Processing
 - `pdf-merger.js` is marked with `'use client'` directive
@@ -120,7 +160,10 @@ fixing a merge bug, not after.
   `Permissions-Policy` (camera/mic/geo/FLoC disabled).
 
 ### Error Isolation
-- **Merge** processes each file in its own `try/catch`. A corrupt, encrypted, 0-byte, page-less
+- **Merge** is cancellable: pass an `AbortSignal`, and it checks between pages and throws
+  `MergeCancelled`. It also yields to the event loop every few pages so the progress overlay
+  actually repaints and the cancel click is seen — the merge still runs on the main thread.
+- **Merge** processes each source in its own `try/catch`. A corrupt, encrypted, 0-byte, page-less
   or otherwise unreadable file is skipped (not fatal); the merge completes with the remaining
   files and a toast names each skipped file *with its reason*
   (`password-protected` / `no pages` / `unreadable`). If *nothing* merges, a clear error is shown.
@@ -139,6 +182,21 @@ fixing a merge bug, not after.
   *height × width* so the displayed page is A4 once the rotation is applied.
 - Where the visual top edge lives in content space depends on the rotation (0 → +y, 90 → −x,
   270 → +x, 180 → −y); `contentOffset()` in `pdf-geometry.js` encodes this.
+
+### Rotation and Crop
+- A page's `rotation` is **added to** whatever `/Rotate` the source already carried, because
+  the user rotated what they saw — and what they saw was already rendered rotated by pdf.js.
+- `crop` is a normalized `{x, y, width, height}` in **display space**: origin top-left, y down,
+  0..1 fractions — the way a box is dragged over the preview. Content space is the opposite on
+  both counts (origin bottom-left, y up) *and* the display rotation swaps the axes on top of
+  that, so `cropToContentRect()` maps between them per rotation. The mappings come from where
+  each content corner lands once `/Rotate` is applied; a full-page crop must map back to the
+  whole media box for all four rotations, which is the property the tests pin.
+- `applyPageTransform()` normalizes the page's visible box to the origin first. The **crop box
+  is the reference, not the media box**: it is what a viewer displays, so it is what the user
+  cropped against.
+- Images take a different path entirely — rotation and crop are applied in `compressImage()`
+  via two canvas passes, because an image has no page boxes to rewrite.
 
 ### Annotations, Forms and Metadata
 - `scaleContent()`/`translateContent()` transform **only the content stream**. pdf-lib ships
@@ -270,11 +328,12 @@ const filesRef = useRef(files);                 // mirror of files for unmount c
 ## Verifying
 
 ```bash
-bun run test    # 34 assertions over the merge pipeline — run this first
+bun run test    # 76 assertions over the merge pipeline and page model — run this first
 ```
 
 The suite builds real PDFs (linked, form-bearing, rotated, landscape, encrypted, page-less,
-corrupt) and asserts on the merged output, so most merge regressions are caught here.
+corrupt) and asserts on the merged output, so most merge regressions are caught here. The page
+model and the crop/rotation maths are pure functions and fully covered.
 
 After changing the merge logic, the CSP, or the worker setup, **also** verify in a real browser
 (the CSP can silently break hydration or the pdf.js worker — neither shows up in the build):
