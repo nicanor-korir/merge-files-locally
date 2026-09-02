@@ -19,7 +19,7 @@ I can't trust some files on online tools, so I built a simple local solution
 - Bookmarks in the output, one per source document
 - Choose image quality (including lossless), page size (A4 / US Letter / keep original), and the output file name
 - Dark mode, following your system setting
-- Cancel a long merge
+- Merging runs in a Web Worker, so the page stays responsive, and can be cancelled at any point
 - Merge into a single PDF, fitted to the A4 page box (landscape and rotated pages handled,
   small pages never blown up)
 - Hyperlinks stay clickable in the right place; form fields are flattened so they can't be
@@ -93,7 +93,7 @@ bun run test
 ```
 
 Because the CSP blocks all outbound requests, this app has no error reporting — so the test
-suite is the only safety net. 95 assertions: it builds real PDFs (linked, form-bearing,
+suite is the only safety net. 115 assertions: it builds real PDFs (linked, form-bearing,
 rotated, landscape, encrypted, page-less, corrupt), asserts on the merged output, and covers
 the page model, the rotation/crop coordinate maths, and the output settings. CI runs the tests, the static build,
 and a check that the committed pdf.js worker matches the installed `pdfjs-dist`.

@@ -22,6 +22,10 @@ app/
   pdf-merger.js    — Main client component: UI, state, lazy page rendering (no merge logic)
 lib/
   merge.js         — mergeDocuments(): the whole merge pipeline, DOM-free and unit-tested
+  run-merge.js     — Dispatcher: worker when the browser allows, main thread otherwise
+  merge-worker.js  — Worker entry; the merge runs here on almost every browser
+  image-transform.js— Shared image geometry, so the two encoders cannot drift
+  compress-image-worker.js — OffscreenCanvas encoder used inside the worker
   pages.js         — The page model: reconcile, reorder, rotate, crop, remove (all pure)
   output-settings.js— Page sizes, image quality presets, download-name sanitising
   pdf-geometry.js  — A4 fitting, annotation transforms, rotation/crop → content-space maths
@@ -139,6 +143,28 @@ block left to move, and the arrows disable rather than silently regrouping their
 - `pdf-merger.js` is marked with `'use client'` directive
 - All file handling, preview generation, and PDF merging runs in the browser
 - Uses Web APIs: File API, Canvas API, Blob, URL.createObjectURL
+
+### The merge runs in a Web Worker
+`runMerge()` in `run-merge.js` is the only entry point the UI calls. It picks a path and
+returns the same shape either way: `{ promise, cancel }`.
+
+- **OffscreenCanvas is the gate, not `Worker`.** Image pages have to be re-encoded, and without
+  OffscreenCanvas there is no canvas inside a worker to do it with. Safari only gained it in
+  16.4, so `runOnMainThread` is a real fallback, not dead code.
+- **Cancelling is `worker.terminate()`** — instant, stops mid-page, needs no cooperation from
+  the merge loop. Because terminating means no further messages arrive, `cancel()` must also
+  reject the promise itself or the caller would wait forever.
+- **pdf-lib is bundled twice**, once for the worker and once for the lazily-imported
+  main-thread fallback. A worker has its own module graph, so this is unavoidable; neither
+  copy is in the first-load bundle.
+- `MergeCancelled` and `describeSkipped` live in their own dependency-free modules so the page
+  can import them without pulling pdf-lib into the main bundle.
+
+⚠️ **`PageCard` is memoised and every callback it takes is stable.** Without that, each
+progress tick re-renders every card in the document. Moving the merge into a worker made this
+*worse*, because progress messages stopped being throttled by the blocked main thread: on a
+400-page merge, main-thread blocking measured 1043ms before memoising and 48ms after. If you
+add a prop to `PageCard`, make sure it is not a fresh object or closure each render.
 
 ### Why the merge logic lives in `lib/`
 The CSP forbids all egress (`connect-src 'self'`), so this app has **no error reporting and
@@ -396,7 +422,7 @@ const filesRef = useRef(files);                 // mirror of files for unmount c
 ## Verifying
 
 ```bash
-bun run test    # 95 assertions over the merge pipeline, page model and settings
+bun run test    # 115 assertions over the merge pipeline, page model, settings and transforms
 ```
 
 The suite builds real PDFs (linked, form-bearing, rotated, landscape, encrypted, page-less,

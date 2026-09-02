@@ -1,7 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { compressImage } from '../lib/compress-image';
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ACCEPTED,
   buildDownloadName,
@@ -12,7 +11,9 @@ import {
   LARGE_TOTAL_BYTES,
   resolveType,
 } from '../lib/file-types';
-import { describeSkipped, MergeCancelled, mergeDocuments } from '../lib/merge';
+import { describeSkipped } from '../lib/describe-skipped';
+import { MergeCancelled } from '../lib/merge-cancelled';
+import { runMerge } from '../lib/run-merge';
 import { registerServiceWorker } from '../lib/register-sw';
 import {
   DEFAULT_PAGE_SIZE,
@@ -388,6 +389,9 @@ export default function PdfMerger() {
     [announce],
   );
 
+  const onStartCrop = useCallback((id) => setCroppingId(id), []);
+  const onCancelCrop = useCallback(() => setCroppingId(null), []);
+
   const onApplyCrop = useCallback(
     (id, rect) => {
       setPages((prev) => cropPage(prev, id, rect));
@@ -431,23 +435,23 @@ export default function PdfMerger() {
 
   const mergePdfs = useCallback(async () => {
     if (pages.length === 0) return;
-    const controller = new AbortController();
-    abortRef.current = controller;
     setMerging(true);
     setCroppingId(null);
 
+    const derived = buildDownloadName(files[0]?.name);
+    const downloadName = sanitizeDownloadName(fileName || derived, derived);
+    const job = runMerge({
+      pages,
+      sources: files.map((f) => ({ fileId: f.id, name: f.name, type: f.type, file: f.file })),
+      pageSize,
+      quality,
+      title: downloadName,
+      onProgress: setProgress,
+    });
+    abortRef.current = job;
+
     try {
-      const derived = buildDownloadName(files[0]?.name);
-      const downloadName = sanitizeDownloadName(fileName || derived, derived);
-      const { bytes, skipped } = await mergeDocuments(pages, {
-        sources: files.map((f) => ({ fileId: f.id, name: f.name, type: f.type, file: f.file })),
-        compressImage,
-        onProgress: setProgress,
-        title: downloadName,
-        signal: controller.signal,
-        pageSize,
-        quality,
-      });
+      const { bytes, skipped } = await job.promise;
 
       const blob = new Blob([bytes], { type: 'application/pdf' });
       const url = URL.createObjectURL(blob);
@@ -484,7 +488,7 @@ export default function PdfMerger() {
   }, [pages, files, fileName, pageSize, quality, showToast]);
 
   const cancelMerge = useCallback(() => {
-    abortRef.current?.abort();
+    abortRef.current?.cancel();
     setProgress('Cancelling...');
   }, []);
 
@@ -686,8 +690,8 @@ export default function PdfMerger() {
                       source={files.find((f) => f.id === page.fileId)}
                       getBitmap={getBitmap}
                       cropping={croppingId === page.id}
-                      onStartCrop={() => setCroppingId(page.id)}
-                      onCancelCrop={() => setCroppingId(null)}
+                      onStartCrop={onStartCrop}
+                      onCancelCrop={onCancelCrop}
                       onApplyCrop={onApplyCrop}
                       onRotate={onRotate}
                       onDelete={onDeletePage}
@@ -803,7 +807,11 @@ function FileItem({ entry, index, total, pageCount, failed, canReorder, onMove, 
 
 // -- One output page --
 
-function PageCard({
+// Memoised, and every callback it takes is stable. Without this each progress tick during a
+// merge re-renders every card in the document — with a few hundred pages that is the single
+// biggest main-thread cost in the app, and moving the merge into a worker made it worse by
+// letting progress messages arrive far more often.
+const PageCard = memo(function PageCard({
   page,
   index,
   total,
@@ -950,7 +958,7 @@ function PageCard({
                 <path d="M21 3v5h-5" strokeLinecap="round" strokeLinejoin="round" />
               </svg>
             </button>
-            <button type="button" className="page-btn" aria-label={`Crop ${label}`} onClick={onStartCrop}>
+            <button type="button" className="page-btn" aria-label={`Crop ${label}`} onClick={() => onStartCrop(page.id)}>
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true" focusable="false">
                 <path d="M6 2v14a2 2 0 0 0 2 2h14" strokeLinecap="round" strokeLinejoin="round" />
                 <path d="M18 22V8a2 2 0 0 0-2-2H2" strokeLinecap="round" strokeLinejoin="round" />
@@ -980,7 +988,7 @@ function PageCard({
       )}
     </div>
   );
-}
+});
 
 // -- Crop rectangle --
 
