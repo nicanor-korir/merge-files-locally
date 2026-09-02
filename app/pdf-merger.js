@@ -14,6 +14,13 @@ import {
 } from '../lib/file-types';
 import { describeSkipped, MergeCancelled, mergeDocuments } from '../lib/merge';
 import {
+  DEFAULT_PAGE_SIZE,
+  DEFAULT_QUALITY,
+  PAGE_SIZES,
+  QUALITY_PRESETS,
+  sanitizeDownloadName,
+} from '../lib/output-settings';
+import {
   arePagesGroupedByFile,
   cropPage,
   isPristine,
@@ -88,6 +95,10 @@ export default function PdfMerger() {
   const [draggedId, setDraggedId] = useState(null);
   const [dragTargetId, setDragTargetId] = useState(null);
   const [croppingId, setCroppingId] = useState(null);
+  const [quality, setQuality] = useState(DEFAULT_QUALITY);
+  const [pageSize, setPageSize] = useState(DEFAULT_PAGE_SIZE);
+  // Empty means "use the derived name", which the placeholder shows.
+  const [fileName, setFileName] = useState('');
   // Bumped when a source's page count becomes known, to trigger reconciliation.
   const [countsVersion, setCountsVersion] = useState(0);
 
@@ -120,6 +131,18 @@ export default function PdfMerger() {
       rasters.clear();
     };
   }, []);
+
+  // Arranging fifty pages and then closing the tab loses all of it — there is no server-side
+  // copy to come back to, by design.
+  useEffect(() => {
+    if (pages.length === 0) return undefined;
+    const warn = (event) => {
+      event.preventDefault();
+      event.returnValue = '';
+    };
+    window.addEventListener('beforeunload', warn);
+    return () => window.removeEventListener('beforeunload', warn);
+  }, [pages.length]);
 
   // -- Toast / announcements --
 
@@ -233,6 +256,7 @@ export default function PdfMerger() {
       const newEntries = [];
       let skippedUnsupported = 0;
       let skippedEmpty = 0;
+      let duplicates = 0;
 
       for (const file of fileList) {
         if (!isAcceptedFile(file)) {
@@ -242,6 +266,11 @@ export default function PdfMerger() {
         if (file.size === 0) {
           skippedEmpty++;
           continue;
+        }
+        // Added anyway — someone may genuinely want the same document twice — but say so,
+        // because dropping a folder twice is the more common reason to see this.
+        if (filesRef.current.some((f) => f.name === file.name && f.size === file.size)) {
+          duplicates++;
         }
         const type = resolveType(file);
         newEntries.push({
@@ -260,6 +289,8 @@ export default function PdfMerger() {
         );
       } else if (skippedEmpty > 0) {
         showToast(`${skippedEmpty} empty file${skippedEmpty > 1 ? 's' : ''} skipped`);
+      } else if (duplicates > 0) {
+        showToast(`Added ${duplicates} file${duplicates > 1 ? 's' : ''} you already had`);
       }
 
       if (newEntries.length > 0) {
@@ -400,13 +431,16 @@ export default function PdfMerger() {
     setCroppingId(null);
 
     try {
-      const downloadName = buildDownloadName(files[0]?.name);
+      const derived = buildDownloadName(files[0]?.name);
+      const downloadName = sanitizeDownloadName(fileName || derived, derived);
       const { bytes, skipped } = await mergeDocuments(pages, {
         sources: files.map((f) => ({ fileId: f.id, name: f.name, type: f.type, file: f.file })),
         compressImage,
         onProgress: setProgress,
         title: downloadName,
         signal: controller.signal,
+        pageSize,
+        quality,
       });
 
       const blob = new Blob([bytes], { type: 'application/pdf' });
@@ -441,7 +475,7 @@ export default function PdfMerger() {
       setProgress('');
       abortRef.current = null;
     }
-  }, [pages, files, showToast]);
+  }, [pages, files, fileName, pageSize, quality, showToast]);
 
   const cancelMerge = useCallback(() => {
     abortRef.current?.abort();
@@ -570,6 +604,38 @@ export default function PdfMerger() {
                   />
                 ))}
               </ul>
+
+              <div className="output-settings">
+                <label className="setting">
+                  <span className="setting-label">Image quality</span>
+                  <select value={quality} onChange={(e) => setQuality(e.target.value)}>
+                    {Object.values(QUALITY_PRESETS).map((p) => (
+                      <option key={p.id} value={p.id}>
+                        {p.label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label className="setting">
+                  <span className="setting-label">Page size</span>
+                  <select value={pageSize} onChange={(e) => setPageSize(e.target.value)}>
+                    {Object.values(PAGE_SIZES).map((p) => (
+                      <option key={p.id} value={p.id}>
+                        {p.label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label className="setting setting-wide">
+                  <span className="setting-label">File name</span>
+                  <input
+                    type="text"
+                    value={fileName}
+                    placeholder={buildDownloadName(files[0]?.name)}
+                    onChange={(e) => setFileName(e.target.value)}
+                  />
+                </label>
+              </div>
 
               <div className="merge-bar">
                 <button type="button" className="btn btn-primary btn-merge" onClick={mergePdfs} disabled={merging || totalPages === 0}>

@@ -33,6 +33,11 @@
   --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.06), 0 1px 2px rgba(0, 0, 0, 0.04);
   --shadow: 0 2px 8px rgba(0, 0, 0, 0.06), 0 1px 2px rgba(0, 0, 0, 0.04);
   --shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.08);
+  --on-primary: #ffffff;
+  --overlay: rgba(243, 244, 246, 0.88);
+  --toast-bg: #111827;
+  --toast-text: #ffffff;
+  --toast-error-bg: #7f1d1d;
   --transition: 180ms ease;
   --font: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
 }
@@ -289,7 +294,7 @@ body {
 
 .btn-primary {
   background: var(--primary);
-  color: #fff;
+  color: var(--on-primary);
   box-shadow: var(--shadow-sm);
 }
 
@@ -714,12 +719,66 @@ body {
   margin: 0 auto 16px;
 }
 
+/* ─────────────────────── Output settings ─────────────────────── */
+
+.output-settings {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px solid var(--border);
+}
+
+.setting {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  flex: 1 1 130px;
+  min-width: 0;
+}
+
+.setting-wide {
+  flex-basis: 100%;
+}
+
+.setting-label {
+  font-size: 0.68rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: var(--text-tertiary);
+  text-transform: uppercase;
+}
+
+.setting select,
+.setting input {
+  width: 100%;
+  min-width: 0;
+  font: inherit;
+  font-size: 0.8rem;
+  color: var(--text);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-xs);
+  padding: 7px 9px;
+  transition: var(--transition);
+}
+
+.setting select:hover,
+.setting input:hover {
+  border-color: var(--border-hover);
+}
+
+.setting input::placeholder {
+  color: var(--text-tertiary);
+}
+
 /* ─────────────────────── Progress Overlay ─────────────────────── */
 
 .progress-overlay {
   position: fixed;
   inset: 0;
-  background: rgba(243, 244, 246, 0.88);
+  background: var(--overlay);
   backdrop-filter: blur(6px);
   display: flex;
   align-items: center;
@@ -776,8 +835,8 @@ body {
   bottom: 24px;
   left: 50%;
   transform: translateX(-50%);
-  background: var(--text);
-  color: #fff;
+  background: var(--toast-bg);
+  color: var(--toast-text);
   font-size: 0.82rem;
   font-weight: 500;
   padding: 10px 22px;
@@ -790,8 +849,9 @@ body {
 
 /* Errors stay on screen longer (matches the 5s JS timeout) and read as a warning. */
 .toast.toast-error {
-  background: #7f1d1d;
-  animation: toastIn 200ms ease, toastOut 200ms ease 4.8s forwards;
+  background: var(--toast-error-bg);
+  /* Matches the 6s JS timeout, so the toast is not removed mid-fade. */
+  animation: toastIn 200ms ease, toastOut 200ms ease 5.8s forwards;
   max-width: min(90vw, 520px);
   white-space: normal;
   text-align: center;
@@ -871,6 +931,48 @@ body {
 
   .progress-card {
     padding: 28px 28px;
+  }
+}
+
+/* ─────────────────────── Dark mode ─────────────────────── */
+
+/* Follows the OS rather than adding a control: a theme toggle is a setting nobody asked for,
+   and every component already paints through the tokens below. */
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #0f1115;
+    --surface: #171a21;
+    --surface-raised: #1e222b;
+    --border: #2a2f3a;
+    --border-hover: #3d434f;
+    --text: #e8eaf0;
+    /* Kept at AA or better against --surface: ~8:1 and ~5.4:1. */
+    --text-secondary: #b0b8c6;
+    --text-tertiary: #8b93a3;
+    --primary: #8098f7;
+    --primary-hover: #94a9f9;
+    --primary-light: #1c2440;
+    --primary-glow: rgba(128, 152, 247, 0.2);
+    /* The dark-mode primary is light, so its label has to go dark to stay legible. */
+    --on-primary: #10131a;
+    --danger: #f2897c;
+    --danger-bg: #35211e;
+    --success: #58c9ad;
+    --success-bg: #122c26;
+    --overlay: rgba(15, 17, 21, 0.88);
+    /* Toasts stay inverted against the page, which flips them too. */
+    --toast-bg: #e8eaf0;
+    --toast-text: #10131a;
+    --toast-error-bg: #f0a196;
+    --shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.45);
+    --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.5), 0 1px 2px rgba(0, 0, 0, 0.4);
+    --shadow: 0 2px 8px rgba(0, 0, 0, 0.5), 0 1px 2px rgba(0, 0, 0, 0.4);
+    --shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.6);
+  }
+
+  /* Tell the browser to darken form controls and scrollbars to match. */
+  html {
+    color-scheme: dark;
   }
 }
 

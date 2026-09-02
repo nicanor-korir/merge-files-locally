@@ -23,6 +23,7 @@ app/
 lib/
   merge.js         — mergeDocuments(): the whole merge pipeline, DOM-free and unit-tested
   pages.js         — The page model: reconcile, reorder, rotate, crop, remove (all pure)
+  output-settings.js— Page sizes, image quality presets, download-name sanitising
   pdf-geometry.js  — A4 fitting, annotation transforms, rotation/crop → content-space maths
   file-types.js    — Validation, MIME resolution, download naming, id generation
   compress-image.js— Browser-only canvas → baseline JPEG, applying rotation + crop
@@ -130,6 +131,27 @@ fixing a merge bug, not after.
 - **Cleanup**: each preview run destroys its `loadingTask` / calls `pdf.cleanup()` in a
   `finally`, so superseded runs (rapid add/remove/reorder) don't keep rendering in the
   background.
+
+### Output Settings
+Three controls, deliberately no more, with defaults most people never need to change:
+
+- **Image quality** (`balanced` by default). The old behaviour — 1600px and JPEG 0.75 for
+  *everything, always* — quietly put scans below what OCR needs and left visible artefacts on
+  screenshots of text. `original` is `lossless`, which does two things: an untouched image
+  passes through byte-for-byte (no second generation), and a transformed one re-encodes to PNG
+  **only if the source was PNG**. Photographic sources stay JPEG at 0.95, because re-encoding
+  a photo as PNG produces an enormous file for no visible gain.
+- **Page size** (`a4` by default). `original` gives the merge no target box, so `fitPageToBox`
+  returns early and each page keeps its own size. Images still land on A4 — an image has no
+  intrinsic physical size to preserve, so there is nothing for "original" to mean.
+- **File name**, sanitised by `sanitizeDownloadName()`: control characters, path separators and
+  the characters Windows rejects are stripped, and exactly one `.pdf` is applied. It falls back
+  to the derived name rather than producing a file called `.pdf`.
+
+Passing bytes through is the only path where the image is not one we produced ourselves, so
+`appendImage()` retries with `forceCanvas: true` if the direct embed throws — PDF's DCTDecode
+only understands baseline JPEG, and a progressive one decodes fine in a canvas but cannot be
+embedded. Better to re-encode than to drop the page.
 
 ### Image Processing
 - All images (PNG, JPG, WebP) converted to compressed baseline JPEG before embedding
@@ -266,6 +288,12 @@ fixing a merge bug, not after.
 - `:focus-visible` outlines on all controls; `prefers-reduced-motion` neutralizes spinners,
   fades, and transforms; touch targets are ≥44px on coarse-pointer devices
 - Color tokens meet WCAG AA contrast (`--text-secondary`/`--text-tertiary` were darkened)
+- **Dark mode follows the OS** (`prefers-color-scheme`) with no toggle — a theme control is a
+  setting nobody asked for. It overrides *tokens only*; every component already paints through
+  them. If you add a colour, add it as a token or it will not survive the theme switch. Note
+  `--on-primary`: the dark-mode primary is light, so its button label has to go dark.
+- A `beforeunload` guard fires once pages exist. Arranging fifty pages and closing the tab
+  loses all of it — there is no server-side copy, by design.
 
 ## Code Patterns
 
@@ -328,7 +356,7 @@ const filesRef = useRef(files);                 // mirror of files for unmount c
 ## Verifying
 
 ```bash
-bun run test    # 76 assertions over the merge pipeline and page model — run this first
+bun run test    # 95 assertions over the merge pipeline, page model and settings
 ```
 
 The suite builds real PDFs (linked, form-bearing, rotated, landscape, encrypted, page-less,

@@ -17,6 +17,8 @@ I can't trust some files on online tools, so I built a simple local solution
 - Reorder by dragging a page, or move a whole document as a block
 - Live page-by-page preview, rendered lazily so large documents stay responsive
 - Bookmarks in the output, one per source document
+- Choose image quality (including lossless), page size (A4 / US Letter / keep original), and the output file name
+- Dark mode, following your system setting
 - Cancel a long merge
 - Merge into a single PDF, fitted to the A4 page box (landscape and rotated pages handled,
   small pages never blown up)
@@ -80,9 +82,9 @@ bun run test
 ```
 
 Because the CSP blocks all outbound requests, this app has no error reporting — so the test
-suite is the only safety net. 76 assertions: it builds real PDFs (linked, form-bearing,
+suite is the only safety net. 95 assertions: it builds real PDFs (linked, form-bearing,
 rotated, landscape, encrypted, page-less, corrupt), asserts on the merged output, and covers
-the page model and the rotation/crop coordinate maths. CI runs the tests, the static build,
+the page model, the rotation/crop coordinate maths, and the output settings. CI runs the tests, the static build,
 and a check that the committed pdf.js worker matches the installed `pdfjs-dist`.
 
 > **Note:** `bun install` and `bun run build` automatically copy the pdf.js worker into
