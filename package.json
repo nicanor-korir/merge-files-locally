@@ -6,12 +6,13 @@
   "scripts": {
     "dev": "next dev",
     "prebuild": "node scripts/copy-pdf-worker.mjs",
-    "build": "next build",
+    "build": "next build && node scripts/generate-sw.mjs",
     "start": "next start",
     "test": "vitest run",
     "test:watch": "vitest",
     "postinstall": "node scripts/copy-pdf-worker.mjs",
-    "copy-pdf-worker": "node scripts/copy-pdf-worker.mjs"
+    "copy-pdf-worker": "node scripts/copy-pdf-worker.mjs",
+    "generate-icons": "node scripts/generate-icons.mjs"
   },
   "dependencies": {
     "next": "^15.3.3",

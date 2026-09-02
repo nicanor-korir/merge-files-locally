@@ -13,6 +13,7 @@ import {
   resolveType,
 } from '../lib/file-types';
 import { describeSkipped, MergeCancelled, mergeDocuments } from '../lib/merge';
+import { registerServiceWorker } from '../lib/register-sw';
 import {
   DEFAULT_PAGE_SIZE,
   DEFAULT_QUALITY,
@@ -131,6 +132,8 @@ export default function PdfMerger() {
       rasters.clear();
     };
   }, []);
+
+  useEffect(registerServiceWorker, []);
 
   // Arranging fifty pages and then closing the tab loses all of it — there is no server-side
   // copy to come back to, by design.

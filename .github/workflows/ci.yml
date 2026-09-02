@@ -27,6 +27,25 @@ jobs:
       - name: Build static export
         run: bun run build
 
+      # The README promises the app works offline. That promise is only true if the service
+      # worker was generated and actually precached the shell and the pdf.js worker, neither
+      # of which a passing build would tell us on its own.
+      - name: Check the offline bundle is complete
+        run: |
+          node -e "
+            const fs = require('fs');
+            const sw = fs.readFileSync('out/sw.js', 'utf8');
+            const assets = JSON.parse(sw.match(/const ASSETS = (\[[\s\S]*?\]);/)[1]);
+            const required = ['./index.html', './pdf.worker.min.js', './manifest.webmanifest'];
+            const missing = required.filter((f) => !assets.includes(f));
+            if (missing.length) throw new Error('sw.js is missing: ' + missing.join(', '));
+            if (assets.filter((f) => f.startsWith('./_next')).length === 0) {
+              throw new Error('sw.js precached no app chunks');
+            }
+            JSON.parse(fs.readFileSync('out/manifest.webmanifest', 'utf8'));
+            console.log('offline bundle ok: ' + assets.length + ' assets precached');
+          "
+
       # The worker must match the installed pdfjs-dist exactly — a drift here makes pdf.js
       # throw "The API version X does not match the Worker version Y" at runtime, which no
       # amount of building would surface.

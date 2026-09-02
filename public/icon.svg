@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 1000" role="img" aria-label="PDF Merger">
+  <rect width="1000" height="1000" rx="220" fill="#4361ee"/>
+  <path d="M298 170 H570 L750 350 V782 A48 48 0 0 1 702 830 H298 A48 48 0 0 1 250 782 V218 A48 48 0 0 1 298 170 Z" fill="#ffffff"/>
+  <path d="M570 170 L750 350 H570 Z" fill="#c7d2fe"/>
+  <rect x="458" y="370" width="84" height="210" rx="42" fill="#334dc8"/>
+  <path d="M350 540 H650 L500 700 Z" fill="#334dc8"/>
+</svg>

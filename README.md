@@ -29,7 +29,14 @@ I can't trust some files on online tools, so I built a simple local solution
 - Output filename derived from the first file (e.g. `report.pdf` → `report-merged.pdf`)
 - Compressed output for smaller file sizes
 - Accessible: screen-reader announcements, keyboard reordering, visible focus, reduced-motion support
-- Works offline after initial page load
+- **Genuinely works offline** — a service worker precaches the whole app on your first visit,
+  so it keeps working with no connection. Installable as a PWA.
+
+## Install it
+
+Open [merge-pdf.nicanor.xyz](https://merge-pdf.nicanor.xyz) and use your browser's "Install"
+or "Add to Home Screen" option. After that it launches like any other app and works with no
+connection at all.
 
 ## Privacy & Security
 
@@ -45,7 +52,11 @@ not having upload code, the privacy guarantee is *enforced* by a strict Content-
 - Additional hardening headers: `X-Content-Type-Options`, `Referrer-Policy: no-referrer`,
   `X-Frame-Options: DENY`, `Cross-Origin-Opener-Policy`, and a restrictive `Permissions-Policy`.
 
-See [CLAUDE.md](./CLAUDE.md) for the full security model.
+The service worker only ever caches the app's own files; your documents never traverse the
+network, so it never sees them.
+
+See [CLAUDE.md](./CLAUDE.md) for the full security model and [SECURITY.md](./SECURITY.md) for
+how to report an issue.
 
 ## Tech Stack
 
