@@ -19,7 +19,6 @@ I can't trust some files on online tools, so I built a simple local solution
 - Live page-by-page preview, rendered lazily so large documents stay responsive
 - Bookmarks in the output, one per source document
 - Choose image quality (including lossless), page size (A4 / US Letter / keep original), and the output file name
-- Dark mode, following your system setting
 - Merging runs in a Web Worker, so the page stays responsive, and can be cancelled at any point
 - Merge into a single PDF, fitted to the A4 page box (landscape and rotated pages handled,
   small pages never blown up)

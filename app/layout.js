@@ -35,7 +35,7 @@ export const metadata = {
 
 export const viewport = {
   themeColor: '#4361ee',
-  colorScheme: 'light dark',
+  colorScheme: 'light',
 };
 
 // Content-Security-Policy delivered as a <meta> so the no-egress guarantee is enforced even

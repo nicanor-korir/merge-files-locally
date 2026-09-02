@@ -438,10 +438,13 @@ It is the only trust-facing UI, and it adds no persistent chrome: the badge was 
 - `:focus-visible` outlines on all controls; `prefers-reduced-motion` neutralizes spinners,
   fades, and transforms; touch targets are ≥44px on coarse-pointer devices
 - Color tokens meet WCAG AA contrast (`--text-secondary`/`--text-tertiary` were darkened)
-- **Dark mode follows the OS** (`prefers-color-scheme`) with no toggle — a theme control is a
-  setting nobody asked for. It overrides *tokens only*; every component already paints through
-  them. If you add a colour, add it as a token or it will not survive the theme switch. Note
-  `--on-primary`: the dark-mode primary is light, so its button label has to go dark.
+- **The app is deliberately light-only**, and `:root` sets `color-scheme: light` so form
+  controls and scrollbars stay light on a dark OS. A `prefers-color-scheme: dark` palette was
+  built and then removed: the content area is full of white PDF pages, so on a dark ground the
+  pages become the brightest thing on screen — backwards for a document tool, where the chrome
+  should recede and the page should read like paper. Dimming the pages to fix it would
+  misrepresent the document, which is the one thing this app must not do. Don't reintroduce it
+  without solving that.
 - A `beforeunload` guard fires once pages exist. Arranging fifty pages and closing the tab
   loses all of it — there is no server-side copy, by design.
 

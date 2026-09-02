@@ -131,6 +131,7 @@ Potential enhancements (not currently implemented):
 - [ ] Page rotation
 - [ ] Page deletion from preview
 - [ ] Drag reorder in preview panel
-- [ ] Dark mode theme
+- [x] ~~Dark mode theme~~ — built, then removed on purpose: white PDF pages glare against a
+      dark ground, and the app is a document tool. Light theme is the deliberate choice.
 - [ ] PWA support for offline install
 - [ ] Batch processing multiple outputs

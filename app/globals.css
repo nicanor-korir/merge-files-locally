@@ -40,6 +40,12 @@
   --toast-error-bg: #7f1d1d;
   --transition: 180ms ease;
   --font: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  /* Deliberately light-only. The content area is full of white PDF pages; on a dark ground
+     they are the brightest thing on screen, which is backwards for a document tool — the
+     chrome should recede and the page should read like paper. Dimming the pages instead would
+     misrepresent the document, which is the one thing this app must not do.
+     Declaring it here also keeps form controls and scrollbars light on a dark OS. */
+  color-scheme: light;
 }
 
 body {
@@ -1043,48 +1049,6 @@ body {
 
   .progress-card {
     padding: 28px 28px;
-  }
-}
-
-/* ─────────────────────── Dark mode ─────────────────────── */
-
-/* Follows the OS rather than adding a control: a theme toggle is a setting nobody asked for,
-   and every component already paints through the tokens below. */
-@media (prefers-color-scheme: dark) {
-  :root {
-    --bg: #0f1115;
-    --surface: #171a21;
-    --surface-raised: #1e222b;
-    --border: #2a2f3a;
-    --border-hover: #3d434f;
-    --text: #e8eaf0;
-    /* Kept at AA or better against --surface: ~8:1 and ~5.4:1. */
-    --text-secondary: #b0b8c6;
-    --text-tertiary: #8b93a3;
-    --primary: #8098f7;
-    --primary-hover: #94a9f9;
-    --primary-light: #1c2440;
-    --primary-glow: rgba(128, 152, 247, 0.2);
-    /* The dark-mode primary is light, so its label has to go dark to stay legible. */
-    --on-primary: #10131a;
-    --danger: #f2897c;
-    --danger-bg: #35211e;
-    --success: #58c9ad;
-    --success-bg: #122c26;
-    --overlay: rgba(15, 17, 21, 0.88);
-    /* Toasts stay inverted against the page, which flips them too. */
-    --toast-bg: #e8eaf0;
-    --toast-text: #10131a;
-    --toast-error-bg: #f0a196;
-    --shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.45);
-    --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.5), 0 1px 2px rgba(0, 0, 0, 0.4);
-    --shadow: 0 2px 8px rgba(0, 0, 0, 0.5), 0 1px 2px rgba(0, 0, 0, 0.4);
-    --shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.6);
-  }
-
-  /* Tell the browser to darken form controls and scrollbars to match. */
-  html {
-    color-scheme: dark;
   }
 }
 
