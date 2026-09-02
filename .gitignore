@@ -138,3 +138,9 @@ dist
 vite.config.js.timestamp-*
 vite.config.ts.timestamp-*
 .vercel
+
+# Built from lib/merge-worker.js by scripts/build-worker.mjs on every dev/build run. Unlike
+# public/pdf.worker.min.js (copied from a pinned dependency and checked for drift in CI), this
+# is compiled from our own source, so committing it would put a 400KB minified diff in front
+# of every change to the merge code.
+/public/merge-worker.js

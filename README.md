@@ -62,7 +62,7 @@ how to report an issue.
 
 - **Runtime**: [Bun](https://bun.sh)
 - **Tests**: Vitest
-- **Framework**: Next.js 15 (App Router, static export)
+- **Framework**: Next.js 16 (App Router, static export, Turbopack)
 - **Language**: JavaScript (React 19)
 - **PDF Creation**: pdf-lib
 - **PDF Preview**: pdfjs-dist (v6)

@@ -4,24 +4,26 @@
   "description": "i can't trust some files on online tools, building a simple local solution",
   "private": true,
   "scripts": {
-    "dev": "next dev",
+    "dev": "node scripts/build-worker.mjs && next dev",
     "prebuild": "node scripts/copy-pdf-worker.mjs",
-    "build": "next build && node scripts/generate-sw.mjs",
+    "build": "node scripts/build-worker.mjs && next build && node scripts/generate-sw.mjs",
     "start": "next start",
     "test": "vitest run",
     "test:watch": "vitest",
     "postinstall": "node scripts/copy-pdf-worker.mjs",
     "copy-pdf-worker": "node scripts/copy-pdf-worker.mjs",
-    "generate-icons": "node scripts/generate-icons.mjs"
+    "generate-icons": "node scripts/generate-icons.mjs",
+    "build-worker": "node scripts/build-worker.mjs"
   },
   "dependencies": {
-    "next": "^15.3.3",
+    "next": "^16.3.4",
     "pdf-lib": "^1.17.1",
     "pdfjs-dist": "^6.3.289",
-    "react": "^19.1.0",
-    "react-dom": "^19.1.0"
+    "react": "^19.2.8",
+    "react-dom": "^19.2.8"
   },
   "devDependencies": {
+    "esbuild": "^0.28.2",
     "vitest": "^4.1.11"
   }
 }
