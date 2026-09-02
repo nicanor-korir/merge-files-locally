@@ -19,7 +19,16 @@ app/
   layout.js        — Root layout: metadata, CSP <meta>, global styles
   globals.css      — All styles (CSS custom properties, responsive layout, a11y utilities)
   page.js          — Simple wrapper that renders PdfMerger
-  pdf-merger.js    — Main client component with all application logic
+  pdf-merger.js    — Main client component: UI, state, previews (no merge logic)
+lib/
+  merge.js         — mergeDocuments(): the whole merge pipeline, DOM-free and unit-tested
+  pdf-geometry.js  — A4 constants, fitPageToA4, fitToA4Box, translateAnnotations
+  file-types.js    — Validation, MIME resolution, download naming, id generation
+  compress-image.js— Browser-only canvas → baseline JPEG conversion
+  *.test.js        — Vitest suites (run in Node)
+  __fixtures__/    — Programmatic PDF builders + a 1x1 baseline JPEG
+.github/workflows/
+  ci.yml           — Tests, build, and a pdf.js worker drift check on every push/PR
 scripts/
   copy-pdf-worker.mjs — Copies pdf.js worker into public/ (postinstall + prebuild)
 public/
@@ -40,6 +49,8 @@ bun run dev            # Start development server (http://localhost:3000)
 bun run build          # Production build (runs prebuild worker-copy, exports to out/)
 bun run start          # Serve production build locally
 bun run copy-pdf-worker # Manually re-copy the pdf.js worker (rarely needed)
+bun run test           # Run the Vitest suite once
+bun run test:watch     # Re-run tests on change
 ```
 
 ## Architecture Notes
@@ -53,6 +64,17 @@ bun run copy-pdf-worker # Manually re-copy the pdf.js worker (rarely needed)
 - `pdf-merger.js` is marked with `'use client'` directive
 - All file handling, preview generation, and PDF merging runs in the browser
 - Uses Web APIs: File API, Canvas API, Blob, URL.createObjectURL
+
+### Why the merge logic lives in `lib/`
+The CSP forbids all egress (`connect-src 'self'`), so this app has **no error reporting and
+never will** — tests are not one safety net among several, they are the only one. `lib/merge.js`
+is therefore kept free of DOM APIs: `compressImage` is passed in as a parameter rather than
+imported, so the entire merge pipeline runs under Vitest in Node against real PDF fixtures.
+Anything that can only run in a browser (canvas, object URLs, pdf.js rendering) stays in
+`app/pdf-merger.js` or `lib/compress-image.js`.
+
+Every defect the test suite covers was a real bug that shipped silently. Add a fixture before
+fixing a merge bug, not after.
 
 ### PDF Handling
 - **pdf-lib**: Creates new PDFs, embeds images, copies pages from existing PDFs
@@ -98,17 +120,46 @@ bun run copy-pdf-worker # Manually re-copy the pdf.js worker (rarely needed)
   `Permissions-Policy` (camera/mic/geo/FLoC disabled).
 
 ### Error Isolation
-- **Merge** processes each file in its own `try/catch`. A corrupt, encrypted, 0-byte, or
-  otherwise unreadable file is skipped (not fatal); the merge completes with the remaining
-  files and a toast lists what was skipped. If *nothing* merges, a clear error is shown.
+- **Merge** processes each file in its own `try/catch`. A corrupt, encrypted, 0-byte, page-less
+  or otherwise unreadable file is skipped (not fatal); the merge completes with the remaining
+  files and a toast names each skipped file *with its reason*
+  (`password-protected` / `no pages` / `unreadable`). If *nothing* merges, a clear error is shown.
 - **Preview** similarly catches per-file and shows a "Could not render PDF" tile.
 
 ### A4 Page Fitting
-- Pages/images are fitted to the **A4 bounding box** (`min(A4_W/w, A4_H/h)`), preserving
-  aspect ratio — landscape pages stay landscape instead of being squashed to A4 width.
-- PDF page `/Rotate` metadata is honored: 90°/270° pages swap their effective width/height
-  when computing the fit scale, avoiding distortion (`page.getSize()` alone ignores rotation).
-- The output page grows to at least A4 so single small images/pages still land on a full page.
+- Pages are fitted to the **A4 bounding box** (`min(A4_W/w, A4_H/h, 1)`), preserving aspect
+  ratio — landscape pages stay landscape instead of being squashed to A4 width.
+- **The scale is capped at 1**: a PDF page carries a real physical size, so enlarging a small
+  one (a receipt, a half-letter slip) only produces a soft, blown-up scan. Small pages keep
+  their size and sit centred at the top of a full A4 sheet.
+- Images are the exception — they are scaled *up* to fill the sheet, because an image has no
+  intrinsic physical size (its pixels are not points) so there is nothing to preserve.
+- PDF page `/Rotate` metadata is honored for all four angles. A 90°/270° page swaps its
+  effective width/height when computing the fit scale, and its media box is sized to A4
+  *height × width* so the displayed page is A4 once the rotation is applied.
+- Where the visual top edge lives in content space depends on the rotation (0 → +y, 90 → −x,
+  270 → +x, 180 → −y); `contentOffset()` in `pdf-geometry.js` encodes this.
+
+### Annotations, Forms and Metadata
+- `scaleContent()`/`translateContent()` transform **only the content stream**. pdf-lib ships
+  `scaleAnnotations()` but no translate counterpart, so `translateAnnotations()` in
+  `pdf-geometry.js` shifts each annotation's absolute coordinate arrays (`Rect`, `QuadPoints`,
+  `Vertices`, `L`, `CL`, `InkList`). Without both halves, links and widgets stay at their
+  authored coordinates while the visible content moves — a silent, invisible corruption.
+  `/RD` is deliberately excluded: it holds *relative* insets, so it scales but must not shift.
+- **Form fields are flattened** before copying. Widget annotations survive `copyPages` but the
+  document-level `/AcroForm` does not, which would leave fields visible, misplaced and dead.
+  Flattening bakes each field's appearance into the page content. pdf-lib's `flatten()` leaves
+  the now-dangling widget entries in `/Annots`, so `removeFlattenedWidgets()` strips them.
+- **Encrypted PDFs are refused explicitly.** `ignoreEncryption: true` lets pdf-lib *open* an
+  encrypted file without decrypting it, so its pages copy as unreadable garbage rather than
+  throwing — it would sail past the per-file `try/catch`. The merge checks `isEncrypted` and
+  skips the file with a `password-protected` reason instead.
+- **Output metadata is deliberate and minimal.** The document is created with
+  `updateMetadata: false` so pdf-lib does not stamp its own Producer or a wall-clock
+  timestamp; Producer/Creator/Title are then set explicitly. Note that `PDFDocument.load()`
+  *also* defaults to `updateMetadata: true` and will overwrite Producer on read — pass
+  `{ updateMetadata: false }` when asserting on it in tests.
 
 ## Key Features
 
@@ -134,8 +185,8 @@ bun run copy-pdf-worker # Manually re-copy the pdf.js worker (rarely needed)
 - Page numbers and source file labels
 
 ### PDF Output
-- Pages fitted to the A4 bounding box (595.28 × 841.89pt), aspect ratio preserved, rotation
-  honored (see "A4 Page Fitting" above)
+- Pages fitted to the A4 bounding box (595.28 × 841.89pt), aspect ratio preserved, never
+  upscaled, rotation honored (see "A4 Page Fitting" above)
 - Content centered horizontally and pinned to the top of the page
 - Images compressed to JPEG at 75% quality
 - PDF object streams enabled for smaller file size
@@ -218,7 +269,14 @@ const filesRef = useRef(files);                 // mirror of files for unmount c
 
 ## Verifying
 
-After changing the merge logic, the CSP, or the worker setup, verify in a real browser
+```bash
+bun run test    # 34 assertions over the merge pipeline — run this first
+```
+
+The suite builds real PDFs (linked, form-bearing, rotated, landscape, encrypted, page-less,
+corrupt) and asserts on the merged output, so most merge regressions are caught here.
+
+After changing the merge logic, the CSP, or the worker setup, **also** verify in a real browser
 (the CSP can silently break hydration or the pdf.js worker — neither shows up in the build):
 
 ```bash

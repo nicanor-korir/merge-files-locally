@@ -1,74 +1,18 @@
 'use client';
 
 import { useState, useRef, useCallback, useEffect } from 'react';
-import { PDFDocument } from 'pdf-lib';
-
-const ACCEPTED = '.pdf,.png,.jpg,.jpeg,.webp';
-const ACCEPTED_TYPES = ['application/pdf', 'image/png', 'image/jpeg', 'image/webp'];
-const ACCEPTED_EXTENSIONS = ['pdf', 'png', 'jpg', 'jpeg', 'webp'];
-
-// A4 page dimensions in points.
-const A4_WIDTH = 595.28;
-const A4_HEIGHT = 841.89;
-
-// Soft thresholds for warning the user about large in-memory merges (no hard limit).
-const LARGE_FILE_COUNT = 50;
-const LARGE_TOTAL_BYTES = 150 * 1024 * 1024; // 150 MB
-
-// Name the downloaded file after the first merged file, e.g. "report.pdf" → "report-merged.pdf"
-function buildDownloadName(firstName) {
-  const base = (firstName || 'merged').replace(/\.[^.]+$/, '').trim();
-  return `${base || 'merged'}-merged.pdf`;
-}
-
-// crypto.randomUUID() only exists in secure contexts (HTTPS / localhost). This app is
-// designed to run offline from any static server or file://, where it may be undefined —
-// fall back to a getRandomValues-based UUID so adding files never throws.
-function generateId() {
-  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
-    try {
-      return crypto.randomUUID();
-    } catch {
-      /* fall through */
-    }
-  }
-  if (typeof crypto !== 'undefined' && typeof crypto.getRandomValues === 'function') {
-    const buf = new Uint8Array(16);
-    crypto.getRandomValues(buf);
-    buf[6] = (buf[6] & 0x0f) | 0x40; // version 4
-    buf[8] = (buf[8] & 0x3f) | 0x80; // variant
-    const hex = [...buf].map((b) => b.toString(16).padStart(2, '0'));
-    return `${hex.slice(0, 4).join('')}-${hex.slice(4, 6).join('')}-${hex.slice(6, 8).join('')}-${hex.slice(8, 10).join('')}-${hex.slice(10, 16).join('')}`;
-  }
-  // Last-resort fallback (non-cryptographic, only for ancient/locked-down environments).
-  return `id-${performance.now().toString(36).replace('.', '')}-${(performance.now() * 1000 % 1e9 | 0).toString(36)}`;
-}
-
-// File-type validation that tolerates an empty/missing MIME type by falling back to the
-// extension. Browsers (especially on Linux, or for dragged files) sometimes report
-// file.type === '', which would otherwise silently reject a perfectly valid PDF/image.
-function fileExtension(name) {
-  const dot = name.lastIndexOf('.');
-  return dot === -1 ? '' : name.slice(dot + 1).toLowerCase();
-}
-
-function isAcceptedFile(file) {
-  if (file.type && ACCEPTED_TYPES.includes(file.type)) return true;
-  if (!file.type && ACCEPTED_EXTENSIONS.includes(fileExtension(file.name))) return true;
-  return false;
-}
-
-// Normalize a file to a canonical MIME type, deriving it from the extension when the
-// browser didn't supply one. Guarantees downstream code always sees a real type.
-function resolveType(file) {
-  if (file.type) return file.type;
-  const ext = fileExtension(file.name);
-  if (ext === 'pdf') return 'application/pdf';
-  if (ext === 'png') return 'image/png';
-  if (ext === 'webp') return 'image/webp';
-  if (ext === 'jpg' || ext === 'jpeg') return 'image/jpeg';
-  return '';
-}
+import { compressImage } from '../lib/compress-image';
+import {
+  ACCEPTED,
+  buildDownloadName,
+  formatSize,
+  generateId,
+  isAcceptedFile,
+  LARGE_FILE_COUNT,
+  LARGE_TOTAL_BYTES,
+  resolveType,
+} from '../lib/file-types';
+import { describeSkipped, mergeDocuments } from '../lib/merge';
 
 export default function PdfMerger() {
   const [files, setFiles] = useState([]);
@@ -333,73 +277,31 @@ export default function PdfMerger() {
     if (files.length === 0) return;
     setMerging(true);
 
-    const failed = []; // names of files that couldn't be processed
-
     try {
-      const mergedPdf = await PDFDocument.create();
-
-      for (let i = 0; i < files.length; i++) {
-        const entry = files[i];
-        setProgress(`Processing ${i + 1} of ${files.length}: ${entry.name}`);
-
-        // Per-file isolation: a single corrupt / encrypted / undecodable file must not
-        // discard the whole merge. Skip it, remember it, and report at the end.
-        try {
-          const arrayBuffer = await entry.file.arrayBuffer();
-
-          if (entry.type === 'application/pdf') {
-            const sourcePdf = await PDFDocument.load(arrayBuffer, { ignoreEncryption: true });
-            const pages = await mergedPdf.copyPages(sourcePdf, sourcePdf.getPageIndices());
-            pages.forEach((page) => {
-              fitPageToA4(page);
-              mergedPdf.addPage(page);
-            });
-          } else {
-            // Convert all images to compressed baseline JPEG for smaller, embeddable output.
-            const jpgBuf = await compressImage(entry.file);
-            const image = await mergedPdf.embedJpg(jpgBuf);
-            const { width: imgW, height: imgH } = image.scale(1);
-            const { drawW, drawH, pageW, pageH } = fitToA4Box(imgW, imgH);
-            const page = mergedPdf.addPage([pageW, pageH]);
-            // Center horizontally; pin to the top of the page.
-            page.drawImage(image, {
-              x: (pageW - drawW) / 2,
-              y: pageH - drawH,
-              width: drawW,
-              height: drawH,
-            });
-          }
-        } catch (fileErr) {
-          console.error('Skipping file during merge:', entry.name, fileErr);
-          failed.push(entry.name);
-        }
-      }
-
-      if (mergedPdf.getPageCount() === 0) {
-        throw new Error(
-          failed.length
-            ? 'None of the files could be merged (all were corrupt, encrypted, or unreadable).'
-            : 'No pages to merge.',
-        );
-      }
-
-      setProgress('Compressing PDF...');
-      const pdfBytes = await mergedPdf.save({
-        useObjectStreams: true,
-        addDefaultPage: false,
+      const downloadName = buildDownloadName(files[0]?.name);
+      const { bytes, skipped } = await mergeDocuments(files, {
+        compressImage,
+        onProgress: setProgress,
+        title: downloadName,
       });
-      const blob = new Blob([pdfBytes], { type: 'application/pdf' });
+
+      const blob = new Blob([bytes], { type: 'application/pdf' });
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = buildDownloadName(files[0]?.name);
+      a.download = downloadName;
       a.click();
       // Defer revoke: revoking immediately after click() can abort the download in some
       // browsers (older Firefox / certain download managers).
       setTimeout(() => URL.revokeObjectURL(url), 10000);
 
-      if (failed.length) {
-        showToast(`Merged, but skipped ${failed.length} unreadable file${failed.length > 1 ? 's' : ''}: ${failed.join(', ')}`);
+      if (skipped.length) {
+        // Surfaced as an error toast so it lingers and is announced assertively — a silently
+        // dropped file is exactly what the user needs to hear about.
+        showToast(
+          `Merged. Skipped ${skipped.length} file${skipped.length > 1 ? 's' : ''}: ${describeSkipped(skipped)}`,
+          true,
+        );
       } else {
         showToast('PDF merged and downloaded!');
       }
@@ -665,118 +567,4 @@ function FileItem({ entry, index, total, isDragging, isDragTarget, onDragStart, 
       </button>
     </li>
   );
-}
-
-function formatSize(bytes) {
-  if (bytes < 1024) return bytes + ' B';
-  if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
-  return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
-}
-
-function compressImage(file, maxDimension = 1600, quality = 0.75) {
-  return new Promise((resolve, reject) => {
-    const img = new Image();
-    const objectUrl = URL.createObjectURL(file);
-    // Revoke exactly once, on every exit path (success or failure), to avoid leaks.
-    let revoked = false;
-    const cleanup = () => {
-      if (!revoked) {
-        revoked = true;
-        URL.revokeObjectURL(objectUrl);
-      }
-    };
-
-    img.onload = () => {
-      let { naturalWidth: w, naturalHeight: h } = img;
-
-      // Guard against images with no intrinsic dimensions (e.g. some SVGs) which would
-      // otherwise produce a zero-size canvas and a blank or broken page.
-      if (!w || !h) {
-        cleanup();
-        reject(new Error('Image has no intrinsic dimensions'));
-        return;
-      }
-
-      // Scale down large images
-      if (w > maxDimension || h > maxDimension) {
-        const ratio = Math.min(maxDimension / w, maxDimension / h);
-        w = Math.round(w * ratio);
-        h = Math.round(h * ratio);
-      }
-
-      const canvas = document.createElement('canvas');
-      canvas.width = w;
-      canvas.height = h;
-      const ctx = canvas.getContext('2d');
-      // JPEG has no alpha; flatten transparency onto white so transparent PNG/WebP
-      // regions render as white rather than black.
-      ctx.fillStyle = '#ffffff';
-      ctx.fillRect(0, 0, w, h);
-      ctx.drawImage(img, 0, 0, w, h);
-      canvas.toBlob(
-        (blob) => {
-          cleanup();
-          if (!blob) return reject(new Error('Canvas conversion failed'));
-          blob.arrayBuffer().then(resolve).catch(reject);
-        },
-        'image/jpeg',
-        quality,
-      );
-    };
-    img.onerror = () => {
-      cleanup();
-      reject(new Error('Failed to load image'));
-    };
-    img.src = objectUrl;
-  });
-}
-
-// Resize a copied PDF page to fit within the A4 box, preserving aspect ratio and honoring
-// the page's /Rotate metadata. 90°/270° pages have swapped effective (visual) dimensions,
-// so the fit scale is computed against the visual box to avoid distortion.
-//
-// scaleContent()/translateContent() operate in the page's *unrotated* content coordinate
-// space. For unrotated pages that space matches the visual layout, so we scale the media
-// box to A4 and pin content to the top. For rotated pages, mapping a visual top-pin back
-// into content space is ambiguous; we instead size the page tightly to the scaled content
-// (no extra padding), which keeps the (already rotated) content correctly placed and
-// undistorted — the only thing the old code got visibly wrong.
-function fitPageToA4(page) {
-  const rotation = ((page.getRotation().angle % 360) + 360) % 360;
-  const rotated = rotation === 90 || rotation === 270;
-  const { width: mw, height: mh } = page.getSize();
-  const visW = rotated ? mh : mw;
-  const visH = rotated ? mw : mh;
-
-  const scale = Math.min(A4_WIDTH / visW, A4_HEIGHT / visH);
-  page.scaleContent(scale, scale);
-
-  if (rotated) {
-    // Size to the scaled media box; rotation already maps content to the visual box.
-    page.setSize(mw * scale, mh * scale);
-    return;
-  }
-
-  const scaledW = mw * scale;
-  const scaledH = mh * scale;
-  const pageW = Math.max(scaledW, A4_WIDTH);
-  const pageH = Math.max(scaledH, A4_HEIGHT);
-  page.setSize(pageW, pageH);
-  // Center horizontally, pin to the top of the page.
-  page.translateContent((pageW - scaledW) / 2, pageH - scaledH);
-}
-
-// Compute how to place an image of (imgW × imgH) within the A4 box: scale to fit, then
-// grow the page to at least A4 so single images still land on a full-size page.
-function fitToA4Box(imgW, imgH) {
-  const scale = Math.min(A4_WIDTH / imgW, A4_HEIGHT / imgH);
-  const drawW = imgW * scale;
-  const drawH = imgH * scale;
-  return {
-    scale,
-    drawW,
-    drawH,
-    pageW: Math.max(drawW, A4_WIDTH),
-    pageH: Math.max(drawH, A4_HEIGHT),
-  };
 }

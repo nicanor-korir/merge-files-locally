@@ -15,8 +15,12 @@ I can't trust some files on online tools, so I built a simple local solution
 - Drag-and-drop file upload (with extension fallback when the browser reports no MIME type)
 - Reorder files via drag-and-drop or arrow buttons
 - Live combined preview before merging
-- Merge into a single PDF, fitted to the A4 page box (landscape and rotated pages handled)
-- Resilient merge: a corrupt, encrypted, or unreadable file is skipped, not fatal — the rest still merge
+- Merge into a single PDF, fitted to the A4 page box (landscape and rotated pages handled,
+  small pages never blown up)
+- Hyperlinks stay clickable in the right place; form fields are flattened so they can't be
+  silently lost
+- Resilient merge: a corrupt, password-protected, or unreadable file is skipped with a named
+  reason, not fatal — the rest still merge
 - Output filename derived from the first file (e.g. `report.pdf` → `report-merged.pdf`)
 - Compressed output for smaller file sizes
 - Accessible: screen-reader announcements, keyboard reordering, visible focus, reduced-motion support
@@ -41,6 +45,7 @@ See [CLAUDE.md](./CLAUDE.md) for the full security model.
 ## Tech Stack
 
 - **Runtime**: [Bun](https://bun.sh)
+- **Tests**: Vitest
 - **Framework**: Next.js 15 (App Router, static export)
 - **Language**: JavaScript (React 19)
 - **PDF Creation**: pdf-lib
@@ -64,6 +69,17 @@ bun run start
 ```
 
 Open [http://localhost:3000](http://localhost:3000) in your browser.
+
+## Tests
+
+```bash
+bun run test
+```
+
+Because the CSP blocks all outbound requests, this app has no error reporting — so the test
+suite is the only safety net. It builds real PDFs (linked, form-bearing, rotated, landscape,
+encrypted, page-less, corrupt) and asserts on the merged output. CI runs the tests, the static
+build, and a check that the committed pdf.js worker matches the installed `pdfjs-dist`.
 
 > **Note:** `bun install` and `bun run build` automatically copy the pdf.js worker into
 > `public/pdf.worker.min.js` (via `scripts/copy-pdf-worker.mjs`), keeping it in lock-step with
