@@ -47,8 +47,8 @@ not having upload code, the privacy guarantee is *enforced* by a strict Content-
   leave your device — even if a future bug or a malicious PDF tried.
 - The CSP ships both as an HTTP header (via `vercel.json`, when hosted on Vercel) and as a
   `<meta>` tag (so the guarantee holds even from `file://` or any plain static host).
-- PDFs are rendered with pdf.js configured `isEvalSupported: false`, mitigating CVE-2024-4367
-  (arbitrary JS execution from a crafted PDF).
+- PDFs are rendered with pdf.js kept current (v6), so parser fixes such as CVE-2024-4367
+  (arbitrary JS execution from a crafted PDF) are picked up upstream.
 - Additional hardening headers: `X-Content-Type-Options`, `Referrer-Policy: no-referrer`,
   `X-Frame-Options: DENY`, `Cross-Origin-Opener-Policy`, and a restrictive `Permissions-Policy`.
 
@@ -65,7 +65,7 @@ how to report an issue.
 - **Framework**: Next.js 15 (App Router, static export)
 - **Language**: JavaScript (React 19)
 - **PDF Creation**: pdf-lib
-- **PDF Preview**: pdfjs-dist
+- **PDF Preview**: pdfjs-dist (v6)
 - **Styling**: Plain CSS
 
 ## Getting Started

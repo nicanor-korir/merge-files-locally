@@ -153,15 +153,20 @@ fixing a merge bug, not after.
 
 ### PDF Handling
 - **pdf-lib**: Creates new PDFs, embeds images, copies pages from existing PDFs
-- **pdfjs-dist** (pinned to `3.11.174`): Renders PDF pages to canvas for preview thumbnails
+- **pdfjs-dist** (`6.x`): Renders PDF pages to canvas for preview thumbnails
 - **Worker**: enabled and served as a static file. `pdf-merger.js` sets
   `GlobalWorkerOptions.workerSrc = '/pdf.worker.min.js'`. That file lives in `public/` and is
   produced by `scripts/copy-pdf-worker.mjs`, which copies the worker out of the installed
   `pdfjs-dist` on `postinstall` and `prebuild` so the two never drift (a version mismatch
   makes pdf.js throw `"The API version X does not match the Worker version Y"`).
-- **Security**: `getDocument(...)` is called with `isEvalSupported: false` to mitigate
-  CVE-2024-4367 (arbitrary JS execution from a crafted PDF via font handling), since the
-  preview path renders untrusted, user-supplied PDFs.
+  From pdf.js 4 the library is ESM (`pdfjs-dist/legacy/build/pdf.mjs`) and the worker is
+  started as a **module worker**. The copied file deliberately keeps the `.js` extension even
+  though its source is `.mjs`: the extension is irrelevant to a module worker, while `.js` is
+  the one every static host reliably serves as `text/javascript` — a host that does not know
+  `.mjs` would serve `application/octet-stream` and the worker would refuse to load.
+- **Security**: CVE-2024-4367 (arbitrary JS execution from a crafted PDF via font handling)
+  was fixed upstream in pdf.js 4.2.67. The `isEvalSupported: false` workaround this code used
+  to pass has been removed from the API entirely as of v6 — do not try to reinstate it.
 - **Cleanup**: each preview run destroys its `loadingTask` / calls `pdf.cleanup()` in a
   `finally`, so superseded runs (rapid add/remove/reorder) don't keep rendering in the
   background.
@@ -196,7 +201,8 @@ embedded. Better to re-encode than to drop the page.
 - WebP requires canvas conversion since pdf-lib doesn't support it natively
 
 ### Webpack Configuration
-- `canvas` Node.js module aliased to `false` (pdfjs-dist only needs browser Canvas API)
+None. pdfjs-dist v6 no longer reaches for the Node-only `canvas` package, so the alias that
+used to be required for v3 has been removed. `next.config.mjs` is just the static export.
 
 ### Security Model (privacy is enforced, not just intended)
 - **Content-Security-Policy** ships two ways: as an HTTP header via `vercel.json` (strongest;

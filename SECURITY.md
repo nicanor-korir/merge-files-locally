@@ -33,9 +33,9 @@ should show no requests beyond the app's own assets.
   bootstrap, and nonces are not available without a server. This is a real relaxation, and it
   is accepted because `connect-src 'self'` still makes egress impossible — inline script that
   ran would have nowhere to send anything.
-- **`pdfjs-dist` is pinned to 3.11.174.** It is called with `isEvalSupported: false`, which
-  mitigates CVE-2024-4367 (arbitrary JS execution from a crafted PDF via font handling). Moving
-  to pdf.js 4+ is tracked work; it is ESM-only and changes the worker setup.
+- **Preview rendering executes untrusted PDFs in the browser.** That is inherent to showing a
+  preview at all. The mitigation is to keep pdf.js current — it tracks the latest `pdfjs-dist`
+  (v6), so upstream parser fixes such as CVE-2024-4367 are picked up rather than worked around.
 
 ## Scope
 

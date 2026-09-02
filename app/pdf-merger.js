@@ -43,7 +43,7 @@ const CANVAS_WIDTH = 760;
 const MAX_CACHED_RASTERS = 60;
 
 async function loadPdfjs() {
-  const pdfjs = await import('pdfjs-dist/legacy/build/pdf.js');
+  const pdfjs = await import('pdfjs-dist/legacy/build/pdf.mjs');
   const lib = pdfjs.default || pdfjs;
   if (!lib.GlobalWorkerOptions.workerSrc) {
     lib.GlobalWorkerOptions.workerSrc = '/pdf.worker.min.js';
@@ -177,9 +177,11 @@ export default function PdfMerger() {
           if (entry.type === 'application/pdf') {
             const lib = await loadPdfjs();
             const buffer = await entry.file.arrayBuffer();
-            // isEvalSupported: false mitigates CVE-2024-4367 (arbitrary JS execution from a
-            // crafted PDF via font handling) when rendering untrusted, user-supplied PDFs.
-            const task = lib.getDocument({ data: new Uint8Array(buffer), isEvalSupported: false });
+            // Previews render untrusted, user-supplied PDFs. CVE-2024-4367 (arbitrary JS
+            // execution from a crafted PDF via font handling) was fixed upstream in pdf.js
+            // 4.2.67, and the `isEvalSupported: false` workaround this used to pass has been
+            // removed from the API entirely as of v6 — keeping pdf.js current is the defence.
+            const task = lib.getDocument({ data: new Uint8Array(buffer) });
             const pdf = await task.promise;
             if (cancelled) {
               task.destroy();
@@ -238,7 +240,8 @@ export default function PdfMerger() {
       const canvas = document.createElement('canvas');
       canvas.width = viewport.width;
       canvas.height = viewport.height;
-      await pdfPage.render({ canvasContext: canvas.getContext('2d'), viewport }).promise;
+      // v6 takes the canvas itself as well as the context.
+      await pdfPage.render({ canvas, canvasContext: canvas.getContext('2d'), viewport }).promise;
       bitmap = await createImageBitmap(canvas);
       pdfPage.cleanup();
     } else {
