@@ -4,7 +4,7 @@
   "description": "i can't trust some files on online tools, building a simple local solution",
   "private": true,
   "scripts": {
-    "dev": "node scripts/build-worker.mjs && next dev",
+    "dev": "node scripts/dev.mjs",
     "prebuild": "node scripts/copy-pdf-worker.mjs",
     "build": "node scripts/build-worker.mjs && next build && node scripts/generate-sw.mjs",
     "start": "next start",

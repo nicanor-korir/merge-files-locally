@@ -60,7 +60,7 @@ The project uses **Bun** as the package manager (`bun.lock`); npm scripts work t
 ```bash
 bun install            # Install deps (runs postinstall: copies pdf.js worker into public/)
 bun run generate-icons # Re-rasterise app icons + social card (rare)
-bun run dev            # Start development server (http://localhost:3000)
+bun run dev            # Dev server + esbuild watching the merge worker (localhost:3000)
 bun run build          # Production build (worker copy, export to out/, then generate sw.js)
 bun run start          # Serve production build locally
 bun run copy-pdf-worker # Manually re-copy the pdf.js worker (rarely needed)
@@ -119,6 +119,13 @@ So `scripts/build-worker.mjs` bundles `lib/merge-worker.js` with esbuild into
 against `document.baseURI`. That makes it independent of whichever bundler Next ships next,
 gives the service worker a stable name to precache, and works under a sub-path. It must run
 *before* `next build` so the file is copied into the export.
+
+Next knows nothing about `public/merge-worker.js` — it is built by us, not bundled by Next —
+so `bun run dev` goes through `scripts/dev.mjs`, which keeps esbuild watching the worker (and
+everything it imports, which is most of `lib/`) alongside `next dev`. Without it an edit to
+the merge code would be silently ignored until the next full build, which is a bad way to find
+out your change did nothing. `scripts/worker-bundle.mjs` holds the bundle options so the
+one-shot build and the watcher cannot drift.
 
 `runMerge()` also falls back to the main thread if the worker fails to *start* — a bundling
 problem should degrade to a slower merge, never a failed one. Only startup failures retry; an

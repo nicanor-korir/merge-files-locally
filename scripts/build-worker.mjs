@@ -10,24 +10,8 @@
 // It has to run before `next build`, so that public/ is copied into the export.
 
 import { build } from 'esbuild';
-import { dirname, join } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { workerBuildOptions } from './worker-bundle.mjs';
 
-const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
-
-const result = await build({
-  entryPoints: [join(ROOT, 'lib/merge-worker.js')],
-  outfile: join(ROOT, 'public/merge-worker.js'),
-  bundle: true,
-  minify: true,
-  // A classic worker: nothing here needs top-level await or dynamic import, and it keeps the
-  // asset loadable from any static host without module-worker MIME strictness.
-  format: 'iife',
-  platform: 'browser',
-  target: ['es2022'],
-  legalComments: 'none',
-  metafile: true,
-});
-
+const result = await build({ ...workerBuildOptions, metafile: true });
 const bytes = Object.values(result.metafile.outputs)[0].bytes;
 console.log(`[build-worker] public/merge-worker.js written (${Math.round(bytes / 1024)} KB)`);
