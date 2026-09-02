@@ -55,6 +55,10 @@ not having upload code, the privacy guarantee is *enforced* by a strict Content-
 The service worker only ever caches the app's own files; your documents never traverse the
 network, so it never sees them.
 
+**Check it yourself.** Click the "Private" badge in the app: it shows the Content-Security-Policy
+actually in force, read live from the page, and tells you how to confirm in your browser's
+Network tab that nothing leaves.
+
 See [CLAUDE.md](./CLAUDE.md) for the full security model and [SECURITY.md](./SECURITY.md) for
 how to report an issue.
 

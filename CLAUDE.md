@@ -354,6 +354,17 @@ used to be required for v3 has been removed. `next.config.mjs` is just the stati
 
 ## Key Features
 
+### The privacy panel
+The "Private" badge in the header is a button that opens a panel explaining how the guarantee
+is enforced and how to check it. Two rules for it:
+
+- **It reads the live policy** out of the CSP `<meta>` tag rather than restating one. A claim
+  nobody can verify is marketing; if the policy ever weakens, the panel says so on its own.
+- It pulls `connect-src` out separately because that is the load-bearing directive — the one
+  that blocks every outbound fetch, XHR and beacon.
+
+It is the only trust-facing UI, and it adds no persistent chrome: the badge was already there.
+
 ### Layout States
 - **Empty state**: Centered drop zone, no preview panel
 - **With files**: Two-column layout — file list on left, combined preview on right

@@ -107,6 +107,11 @@ body {
   font-size: 0.78rem;
 }
 
+.privacy {
+  position: relative;
+  flex-shrink: 0;
+}
+
 .privacy-badge {
   display: inline-flex;
   align-items: center;
@@ -116,8 +121,96 @@ body {
   color: var(--success);
   font-size: 0.72rem;
   font-weight: 600;
+  font-family: inherit;
+  border: 1px solid transparent;
   border-radius: 99px;
   flex-shrink: 0;
+  cursor: pointer;
+  transition: var(--transition);
+}
+
+.privacy-badge:hover,
+.privacy-badge[aria-expanded='true'] {
+  border-color: var(--success);
+}
+
+.privacy-panel {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  z-index: 150;
+  width: min(92vw, 380px);
+  padding: 16px 18px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow-lg);
+  text-align: left;
+  animation: fadeIn 140ms ease;
+}
+
+.privacy-lead {
+  margin: 0 0 10px;
+  font-size: 0.86rem;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.privacy-points {
+  margin: 0 0 14px;
+  padding-left: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.privacy-points li {
+  font-size: 0.76rem;
+  line-height: 1.5;
+  color: var(--text-secondary);
+}
+
+.privacy-heading {
+  margin: 0 0 5px;
+  font-size: 0.66rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-tertiary);
+}
+
+.privacy-check {
+  margin: 0 0 14px;
+  font-size: 0.76rem;
+  line-height: 1.5;
+  color: var(--text-secondary);
+}
+
+.privacy-directive {
+  display: block;
+  margin-bottom: 8px;
+  padding: 6px 8px;
+  background: var(--success-bg);
+  color: var(--success);
+  border-radius: var(--radius-xs);
+  font-size: 0.7rem;
+  font-weight: 600;
+  word-break: break-word;
+}
+
+.privacy-csp {
+  margin: 0;
+  max-height: 108px;
+  overflow: auto;
+  padding: 8px;
+  background: var(--surface-raised);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-xs);
+  font-size: 0.64rem;
+  line-height: 1.5;
+  color: var(--text-tertiary);
+  white-space: pre-wrap;
+  word-break: break-word;
 }
 
 /* ─────────────────────── Two-Column Layout ─────────────────────── */
