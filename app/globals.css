@@ -704,7 +704,10 @@ body {
 }
 
 .preview-loading {
-  padding: 40px;
+  /* Overlaid rather than laid out beside the canvas: the canvas is width:100%, so as a flex
+     sibling the loader was pushed off to the side of the page instead of sitting on it. */
+  position: absolute;
+  inset: 0;
   display: flex;
   flex-direction: column;
   align-items: center;
