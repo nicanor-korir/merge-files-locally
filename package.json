@@ -5,8 +5,13 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
+    "prebuild": "node scripts/copy-pdf-worker.mjs",
     "build": "next build",
-    "start": "next start"
+    "start": "next start",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "postinstall": "node scripts/copy-pdf-worker.mjs",
+    "copy-pdf-worker": "node scripts/copy-pdf-worker.mjs"
   },
   "dependencies": {
     "next": "^15.3.3",
@@ -14,5 +19,8 @@
     "pdfjs-dist": "3.11.174",
     "react": "^19.1.0",
     "react-dom": "^19.1.0"
+  },
+  "devDependencies": {
+    "vitest": "^4.1.11"
   }
 }
