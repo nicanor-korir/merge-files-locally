@@ -42,6 +42,9 @@ const CANVAS_WIDTH = 760;
 // entries are dropped rather than close()d: a component may still hold one, and drawing a
 // closed bitmap throws.
 const MAX_CACHED_RASTERS = 60;
+// Undo depth. Deep enough to walk back a run of mistaken edits, bounded so a long session
+// cannot retain thousands of page arrays.
+const HISTORY_LIMIT = 50;
 
 async function loadPdfjs() {
   const pdfjs = await import('pdfjs-dist/legacy/build/pdf.mjs');
@@ -120,6 +123,10 @@ export default function PdfMerger() {
   // Sources whose pages have been generated once, so a document the user has emptied page by
   // page does not silently refill itself.
   const seenRef = useRef(new Set());
+  // Previous page arrays, newest last. The page model is immutable, so an undo stack is just
+  // a list of the arrays we replaced — no inverse operations to write and get wrong.
+  const historyRef = useRef([]);
+  const [historyDepth, setHistoryDepth] = useState(0);
 
   useEffect(() => {
     const docs = docsRef.current;
@@ -219,7 +226,13 @@ export default function PdfMerger() {
     for (const source of known) {
       if (source.pageCount > 0) seenRef.current.add(source.fileId);
     }
-    if (next !== pagesRef.current) setPages(next);
+    if (next !== pagesRef.current) {
+      // Adding or removing a document changes which pages exist at all, so earlier
+      // arrangements refer to pages that may be gone. Undoing into one would be incoherent.
+      historyRef.current = [];
+      setHistoryDepth(0);
+      setPages(next);
+    }
   }, [files, countsVersion]);
 
   // -- Rendering --
@@ -343,6 +356,8 @@ export default function PdfMerger() {
     current.forEach(forgetFile);
     announce('Cleared all files');
     setCroppingId(null);
+    historyRef.current = [];
+    setHistoryDepth(0);
     setPages([]);
     setFiles([]);
   }, [announce, forgetFile]);
@@ -351,31 +366,75 @@ export default function PdfMerger() {
 
   const grouped = useMemo(() => arePagesGroupedByFile(pages), [pages]);
 
-  const moveDocument = useCallback(
-    (fileId, direction) => {
-      const entry = filesRef.current.find((f) => f.id === fileId);
-      setPages((prev) => moveFileBlock(prev, fileId, direction));
-      announce(`Moved ${entry?.name ?? 'document'} ${direction < 0 ? 'earlier' : 'later'}`);
+  /**
+   * Apply a page operation, remembering the previous arrangement so it can be undone.
+   *
+   * Every user-facing page edit goes through here. Operations that change nothing (moving the
+   * first page up, cropping to the full page) return the same array and are not recorded, so
+   * undo never appears to do nothing.
+   */
+  const mutate = useCallback(
+    (fn, message) => {
+      const prev = pagesRef.current;
+      const next = fn(prev);
+      if (next === prev) return;
+      historyRef.current = [...historyRef.current, prev].slice(-HISTORY_LIMIT);
+      setHistoryDepth(historyRef.current.length);
+      setPages(next);
+      if (message) announce(message);
     },
     [announce],
   );
 
+  const undo = useCallback(() => {
+    const past = historyRef.current;
+    if (past.length === 0) return;
+    const restored = past[past.length - 1];
+    historyRef.current = past.slice(0, -1);
+    setHistoryDepth(historyRef.current.length);
+    setCroppingId(null);
+    setPages(restored);
+    announce('Undid the last change');
+  }, [announce]);
+
+  useEffect(() => {
+    const onKeyDown = (event) => {
+      if (!(event.metaKey || event.ctrlKey) || event.key.toLowerCase() !== 'z' || event.shiftKey) return;
+      // Leave the browser's own undo alone while the user is typing a file name.
+      const tag = event.target?.tagName;
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || event.target?.isContentEditable) return;
+      event.preventDefault();
+      undo();
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [undo]);
+
+  const moveDocument = useCallback(
+    (fileId, direction) => {
+      const entry = filesRef.current.find((f) => f.id === fileId);
+      mutate(
+        (prev) => moveFileBlock(prev, fileId, direction),
+        `Moved ${entry?.name ?? 'document'} ${direction < 0 ? 'earlier' : 'later'}`,
+      );
+    },
+    [mutate],
+  );
+
   const onRotate = useCallback(
     (id, delta) => {
-      setPages((prev) => rotatePage(prev, id, delta));
-      announce(delta < 0 ? 'Rotated page left' : 'Rotated page right');
+      mutate((prev) => rotatePage(prev, id, delta), delta < 0 ? 'Rotated page left' : 'Rotated page right');
     },
-    [announce],
+    [mutate],
   );
 
   const onDeletePage = useCallback(
     (id) => {
       const index = pagesRef.current.findIndex((p) => p.id === id);
-      setPages((prev) => removePage(prev, id));
       setCroppingId((current) => (current === id ? null : current));
-      announce(`Removed page ${index + 1}`);
+      mutate((prev) => removePage(prev, id), `Removed page ${index + 1}. Press Control or Command Z to undo.`);
     },
-    [announce],
+    [mutate],
   );
 
   const onMovePage = useCallback(
@@ -383,10 +442,9 @@ export default function PdfMerger() {
       const from = pagesRef.current.findIndex((p) => p.id === id);
       const to = from + direction;
       if (to < 0 || to >= pagesRef.current.length) return;
-      setPages((prev) => movePage(prev, id, to));
-      announce(`Moved page to position ${to + 1} of ${pagesRef.current.length}`);
+      mutate((prev) => movePage(prev, id, to), `Moved page to position ${to + 1} of ${pagesRef.current.length}`);
     },
-    [announce],
+    [mutate],
   );
 
   const onStartCrop = useCallback((id) => setCroppingId(id), []);
@@ -394,11 +452,10 @@ export default function PdfMerger() {
 
   const onApplyCrop = useCallback(
     (id, rect) => {
-      setPages((prev) => cropPage(prev, id, rect));
       setCroppingId(null);
-      announce(rect ? 'Crop applied' : 'Crop cleared');
+      mutate((prev) => cropPage(prev, id, rect), rect ? 'Crop applied' : 'Crop cleared');
     },
-    [announce],
+    [mutate],
   );
 
   // -- Drag to reorder pages --
@@ -422,13 +479,13 @@ export default function PdfMerger() {
     (targetId) => {
       setDragTargetId(null);
       if (!draggedId || targetId === draggedId) return;
-      setPages((prev) => {
+      mutate((prev) => {
         const to = prev.findIndex((p) => p.id === targetId);
         return to === -1 ? prev : movePage(prev, draggedId, to);
-      });
+      }, 'Reordered pages');
       setDraggedId(null);
     },
-    [draggedId],
+    [draggedId, mutate],
   );
 
   // -- Merge & download --
@@ -665,9 +722,21 @@ export default function PdfMerger() {
                 <h2 id="preview-heading" className="preview-title">
                   Pages
                 </h2>
-                <span className="preview-pages">
-                  {totalPages} page{totalPages !== 1 ? 's' : ''}
-                </span>
+                <div className="preview-header-actions">
+                  {historyDepth > 0 && (
+                    <button
+                      type="button"
+                      className="btn btn-ghost btn-sm"
+                      onClick={undo}
+                      title="Undo the last page change (Ctrl or Cmd + Z)"
+                    >
+                      Undo
+                    </button>
+                  )}
+                  <span className="preview-pages">
+                    {totalPages} page{totalPages !== 1 ? 's' : ''}
+                  </span>
+                </div>
               </div>
               <p className="reorder-hint">Drag a page to reorder, or use the buttons on each page</p>
 

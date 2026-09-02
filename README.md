@@ -14,6 +14,7 @@ I can't trust some files on online tools, so I built a simple local solution
 - Upload PDF, PNG, JPG, JPEG, and WebP files
 - Drag-and-drop file upload (with extension fallback when the browser reports no MIME type)
 - Rearrange, rotate, crop or delete **individual pages** — not just whole files
+- Undo page edits with the Undo button or Ctrl/Cmd+Z
 - Reorder by dragging a page, or move a whole document as a block
 - Live page-by-page preview, rendered lazily so large documents stay responsive
 - Bookmarks in the output, one per source document

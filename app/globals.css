@@ -619,6 +619,12 @@ body {
   color: var(--text);
 }
 
+.preview-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
 .preview-pages {
   font-size: 0.72rem;
   color: var(--text-tertiary);

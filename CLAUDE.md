@@ -161,6 +161,24 @@ Whole documents can still be moved as a block (`moveFileBlock`), but only while
 `arePagesGroupedByFile()` holds — once the user has interleaved pages by hand there is no
 block left to move, and the arrows disable rather than silently regrouping their work.
 
+### Undo
+Page edits go through `mutate()` in `pdf-merger.js`, which stashes the array being replaced on
+a bounded history stack. The page model is immutable, so undo is just restoring a previous
+array — there are no inverse operations to write and get wrong.
+
+Two rules make it behave:
+
+- **Every page operation in `pages.js` returns the *same array* when it would change nothing**
+  (rotating by a full turn, re-applying an identical crop, removing a page that is not there).
+  `mutate()` skips recording when the array comes back identical, so Undo never appears and
+  then visibly does nothing. There are tests pinning this identity behaviour; keep them
+  passing if you add an operation.
+- **Adding or removing a document clears the history.** Earlier arrangements refer to pages
+  that may no longer exist, so undoing into one would be incoherent.
+
+Ctrl/Cmd+Z is bound at the window, and deliberately ignored while focus is in a text field so
+the browser's own undo still works in the file-name box.
+
 ### Preview Rendering
 - Pages render **lazily**, on `IntersectionObserver` intersection with a 600px margin, so a
   400-page document does not rasterise 400 pages before the user scrolls.
