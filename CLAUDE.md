@@ -70,6 +70,16 @@ bun run test:watch     # Re-run tests on change
 
 ## Architecture Notes
 
+### Deploying (Vercel)
+`vercel.json` deploys `out/` directly (`framework: null` + an explicit `buildCommand` and
+`outputDirectory`) rather than letting Vercel's Next.js builder collect its own output.
+
+That is not cosmetic. `scripts/generate-sw.mjs` writes `out/sw.js` *after* `next build`, and the
+framework builder snapshots the output at `onBuildComplete` — before that script runs. The
+result deployed cleanly, served every other asset, and 404'd on `/sw.js`, so the service worker
+never registered and the app silently had no offline support. Nothing in the build log looked
+wrong. **Deploy a preview and check `/sw.js` before promoting** if you touch the build.
+
 ### Offline / PWA
 The README claims the app works offline. That claim is only true because of `sw.js`, so treat
 it as load-bearing:
